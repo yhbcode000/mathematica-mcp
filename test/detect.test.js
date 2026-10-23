@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { EventEmitter } from 'node:events';
 import { test } from 'node:test';
 import { existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -11,6 +12,7 @@ import {
   kernelNotFoundHint,
   platformCandidates,
   probeKernel,
+  PROBE_MARKER,
   resolveKernel,
   sortByVersionDesc,
   versionOfPath,
@@ -166,6 +168,62 @@ test('Linux candidates include PATH math first and versioned Wolfram installs', 
   const normalized = candidates.map(norm);
   assert.equal(normalized[0], '/usr/bin/math');
   assert.ok(normalized.includes(norm(versioned)));
+});
+
+/** Build a fake kernel child process for probeKernel tests (no real executable). */
+function makeProbeStub(respond) {
+  return (executable) => {
+    const child = new EventEmitter();
+    child.stdout = new EventEmitter();
+    child.stdout.setEncoding = () => {};
+    child.stderr = new EventEmitter();
+    child.stderr.setEncoding = () => {};
+    child.stdin = { write() {} };
+    child.exitCode = null;
+    child.kill = () => {
+      child.exitCode = 0;
+    };
+    setImmediate(() => respond(executable, child));
+    return child;
+  };
+}
+
+test('Wolfram Engine is selected when no Mathematica installation exists', async () => {
+  const fs = makeFakeFs({
+    files: [WIN_ENGINE_150],
+    dirs: { 'C:\\Program Files\\Wolfram Research\\Wolfram Engine': ['15.0'] },
+  });
+  const spawnFn = makeProbeStub((executable, child) => {
+    if (norm(executable) === norm(WIN_ENGINE_150)) child.stdout.emit('data', PROBE_MARKER);
+  });
+  const resolution = await resolveKernel({ env: {}, platform: 'win32', homeDir: TEST_HOME, fs, spawnFn, timeoutMs: 5000 });
+  assert.equal(resolution.ok, true, 'an activated Wolfram Engine alone must be usable');
+  assert.equal(norm(resolution.path), norm(WIN_ENGINE_150));
+  assert.equal(resolution.source, 'platform-default');
+});
+
+test('an unlicensed desktop Mathematica falls back to an activated Wolfram Engine', async () => {
+  const fs = makeFakeFs({
+    files: [WIN_WOLFRAM_150, WIN_ENGINE_150],
+    dirs: {
+      'C:\\Program Files\\Wolfram Research\\Wolfram': ['15.0'],
+      'C:\\Program Files\\Wolfram Research\\Wolfram Engine': ['15.0'],
+    },
+  });
+  const spawnFn = makeProbeStub((executable, child) => {
+    if (norm(executable) === norm(WIN_ENGINE_150)) {
+      child.stdout.emit('data', PROBE_MARKER);
+    } else {
+      child.stderr.emit('data', 'No valid password found.\n');
+    }
+  });
+  const resolution = await resolveKernel({ env: {}, platform: 'win32', homeDir: TEST_HOME, fs, spawnFn, timeoutMs: 5000 });
+  assert.equal(resolution.ok, true);
+  assert.equal(norm(resolution.path), norm(WIN_ENGINE_150));
+  assert.equal(resolution.tried.length, 2);
+  assert.equal(resolution.tried[0].ok, false);
+  assert.equal(resolution.tried[0].reason, 'unlicensed');
+  assert.equal(resolution.tried[1].ok, true);
 });
 
 test('real machine: desktop kernel is preferred and a working kernel is probed (skips when unavailable)', async (t) => {

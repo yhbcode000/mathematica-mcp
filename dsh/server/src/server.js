@@ -8,7 +8,7 @@
 
 import { randomBytes } from 'node:crypto';
 import { mkdir, stat } from 'node:fs/promises';
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { createInterface } from 'node:readline';
 import { tmpdir } from 'node:os';
 import { dirname, isAbsolute, join, resolve } from 'node:path';
@@ -321,7 +321,23 @@ export class McpServer {
     return this._resolution;
   }
 
+  /**
+   * Forget the cached kernel selection so the next call probes candidates again.
+   * Used when the previously selected kernel disappears (for example a removed
+   * Mathematica installation) or when it cannot start, so an activated Wolfram
+   * Engine can take over without restarting the MCP client.
+   */
+  _invalidateKernelCache(reason) {
+    this._diag(`dropping cached kernel resolution: ${reason}`);
+    this._kernel = null;
+    this._kernelPromise = null;
+    this._resolution = null;
+  }
+
   async _getKernel() {
+    if (this._kernel && !existsSync(this._kernel.kernelPath)) {
+      this._invalidateKernelCache(`kernel executable ${this._kernel.kernelPath} no longer exists`);
+    }
     if (this._kernel) return this._kernel;
     if (!this._kernelPromise) {
       this._kernelPromise = (async () => {
@@ -524,6 +540,12 @@ export class McpServer {
       return await this._callTool(name, args);
     } catch (error) {
       if (error instanceof KernelError) {
+        // A kernel that cannot start must not pin the cached resolution forever:
+        // drop it so the next call re-detects candidates and can fall back to
+        // another installation (e.g. an activated Wolfram Engine).
+        if (error.code === 'kernel_start_failed') {
+          this._invalidateKernelCache(`kernel start failed: ${error.message}`);
+        }
         return errorContent(error.message, { error: error.code });
       }
       throw error;
@@ -663,6 +685,9 @@ export class McpServer {
       status = action === 'restart' ? await kernel.restart() : await kernel.interrupt();
     } catch (error) {
       if (error instanceof KernelError) {
+        if (error.code === 'kernel_start_failed') {
+          this._invalidateKernelCache(`kernel ${action} failed: ${error.message}`);
+        }
         return errorContent(`Failed to ${actionVerb} the Mathematica kernel: ${error.message}`, { error: error.code });
       }
       throw error;

@@ -148,6 +148,14 @@ Priority order:
 2. `"kernelPath"` in `~/.mathematica-mcp.json`,
 3. standard install locations (newest version first).
 
+Without an explicit override, each candidate is started once and briefly probed. Desktop Mathematica
+kernels are preferred, and an **activated Wolfram Engine** is the automatic fallback: it is used when
+Mathematica is not installed or its kernel is unlicensed/unusable. The cached choice is revalidated
+before every call — if the kernel executable disappears (Mathematica removed or upgraded), the server
+re-detects candidates on the next call, so the Engine can take over without restarting DSH. To prefer
+the Engine while Mathematica is also installed, set `MATHEMATICA_EXE` to
+`C:\Program Files\Wolfram Research\Wolfram Engine\15.0\math.exe`.
+
 Set an environment variable globally, or put it in `$DSH_HOME/.env` (DSH loads the Harness-home
 `.env`; variables that decide process startup such as `PATH`/`DSH_*` are rejected there, but
 `MATHEMATICA_EXE` is fine), or configure a non-standard kernel through the JSON file:
@@ -167,6 +175,7 @@ server entry path respectively; they exist only for unusual layouts.
 | Entry inactive with a config/`!!js` error | The expression could not resolve the server path. Set `MATHEMATICA_MCP_SERVER_ENTRY` to `<checkout>/server/bin/mathematica-mcp.js` or to the installed `node_modules/dsh-mathematica-mcp/server/bin/mathematica-mcp.js`. |
 | Spawn `ENOENT` for the server | Same as above; also verify `node_modules/dsh-mathematica-mcp/server/bin/mathematica-mcp.js` exists in the profile (a `link:` install needs `dsh/server/` synced). |
 | `kernel not found` / license error from tools | Mathematica/Wolfram Engine not installed, not licensed, or not findable: set `MATHEMATICA_EXE`. Wolfram Engine requires activating a free license once. |
+| Tools stopped working after Mathematica was removed | Not a problem: the next call re-detects candidates and falls back to an activated Wolfram Engine. If it still fails, restart the kernel with `mathematica_kernel_status {"action":"restart"}` or set `MATHEMATICA_EXE` to the Engine `math.exe`. |
 | Market install fails mentioning `git` | Install Git (ensure `git --version` works in the DSH environment) or use Option B/C. |
 | `$Aborted` results | Evaluation exceeded `timeout_seconds`; raise the argument or restart the kernel. |
 | Kernel died / stale state | `mcp__mathematica__mathematica_kernel_status` with `{"action":"restart"}`; the next evaluation respawns the kernel. |

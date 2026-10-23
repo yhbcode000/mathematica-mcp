@@ -1,6 +1,6 @@
 {
   "name": "mathematica-mcp",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "MCP server that exposes a local Wolfram Mathematica kernel over stdio: evaluate Wolfram Language code in a persistent kernel and export PNG/SVG/PDF/CSV/TXT/JSON/TEX files.",
   "type": "module",
   "bin": {

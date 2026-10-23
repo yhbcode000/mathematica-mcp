@@ -1,6 +1,6 @@
 {
   "name": "dsh-mathematica-mcp",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "DeepSeek Harness plugin bundle that connects your locally licensed Mathematica or Wolfram Engine kernel to DSH as MCP tools: evaluate Wolfram Language, export graphics and data files, and inspect a persistent kernel.",
   "type": "module",
   "license": "MIT",

@@ -76,6 +76,17 @@ by starting it and evaluating a trivial program, so unlicensed installs
    and `...\Mathematica\<ver>\math.exe` are preferred over `...\Wolfram Engine\<ver>\math.exe`;
    `math.exe` is used rather than `MathKernel.exe` because only `math.exe` is a reliable stdio REPL.
 
+**Wolfram Engine is a first-class fallback.** When Mathematica is not installed — or its kernel is
+unlicensed/unusable — probing continues with an activated Wolfram Engine and the MCP tools keep working
+with it. If a kernel that was already selected later disappears (for example Mathematica is removed or
+upgraded away), the cached selection is dropped and the next call re-detects candidates, so an activated
+Wolfram Engine can take over without restarting the MCP client. To prefer the Engine even when
+Mathematica is installed, point the server at it explicitly:
+
+```powershell
+setx MATHEMATICA_EXE "C:\Program Files\Wolfram Research\Wolfram Engine\15.0\math.exe"
+```
+
 Example (`Windows`):
 
 ```powershell
@@ -96,7 +107,7 @@ export MATHEMATICA_EXE="/Applications/Mathematica.app/Contents/MacOS/WolframKern
 ```bash
 git clone https://github.com/yhbcode000/mathematica-mcp.git
 cd mathematica-mcp
-node bin/mathematica-mcp.js --version   # mathematica-mcp 0.1.0
+node bin/mathematica-mcp.js --version   # mathematica-mcp 0.1.1
 node bin/mathematica-mcp.js --help
 ```
 
@@ -323,7 +334,9 @@ There are no other environment variables and no configuration files written by t
   unknown methods return `-32601`, malformed JSON returns `-32700`.
 - On first tool use the server probes kernel candidates (spawn, trivial evaluation, 20 s budget),
   caches the first working kernel, then starts a long-lived kernel with `-noprompt` and
-  `$CharacterEncoding = "UTF-8"`.
+  `$CharacterEncoding = "UTF-8"`. Before every call the cached kernel executable is checked again; if
+  it is gone (or a start attempt fails) the cache is dropped and candidates are re-probed, so a
+  removed Mathematica falls back to an activated Wolfram Engine without a client restart.
 - Each evaluation is serialized through a queue (the kernel is single-threaded) and wrapped in one WL
   `Block[...]` expression: the user program is passed as a string and evaluated with `ToExpression`,
   so syntax errors become ordinary `$Failed` results (plus `ToExpression::sntx*` messages) instead of
@@ -366,7 +379,9 @@ Check it manually first:
 **`No valid password found.` / exit code 69**
 
 That candidate is an **unlicensed Wolfram Engine** installation. The server skips it automatically and
-tries the next candidate. Use a desktop Mathematica `math.exe`, or activate the Wolfram Engine licence.
+tries the next candidate. Use a desktop Mathematica `math.exe`, or activate the Wolfram Engine licence
+(free Wolfram account → Engine download page → "Activate"). Once an Engine is activated it is used
+automatically whenever no licensed Mathematica kernel is available.
 
 **`MathKernel.exe` does not respond**
 
