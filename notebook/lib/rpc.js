@@ -73,6 +73,40 @@ function validateCellsAndIndices(payload) {
   return payload;
 }
 
+/** WLJS notebook id hash (`"001"`), required by the web-notebook cell endpoints. */
+function requireWebNotebook(payload) {
+  if (typeof payload?.notebook !== 'string' || payload.notebook.trim() === '') {
+    throw invalidPayload('"notebook" must be a non-empty WLJS notebook id', { field: 'notebook' });
+  }
+  return payload.notebook.trim();
+}
+
+/** WLJS cell id hash, required by the evaluate endpoint. */
+function requireCell(payload) {
+  if (typeof payload?.cell !== 'string' || payload.cell.trim() === '') {
+    throw invalidPayload('"cell" must be a non-empty WLJS cell id', { field: 'cell' });
+  }
+  return payload.cell.trim();
+}
+
+/** Optional `timeLimit` / `maxCharacters` shared by both evaluate endpoints. */
+function optionalEvaluation(payload) {
+  const out = {};
+  if (payload?.timeLimit !== undefined && payload.timeLimit !== null) {
+    if (typeof payload.timeLimit !== 'number' || !Number.isFinite(payload.timeLimit) || payload.timeLimit <= 0) {
+      throw invalidPayload('"timeLimit" must be a positive number of seconds', { field: 'timeLimit' });
+    }
+    out.timeLimit = payload.timeLimit;
+  }
+  if (payload?.maxCharacters !== undefined && payload.maxCharacters !== null) {
+    if (typeof payload.maxCharacters !== 'number' || !Number.isFinite(payload.maxCharacters) || payload.maxCharacters <= 0) {
+      throw invalidPayload('"maxCharacters" must be a positive number', { field: 'maxCharacters' });
+    }
+    out.maxCharacters = payload.maxCharacters;
+  }
+  return out;
+}
+
 /**
  * Endpoint dispatch table. `run` receives the validated payload and returns
  * `{ value, attachments? }`.
@@ -120,6 +154,83 @@ const ENDPOINTS = new Map([
   ],
   ['openInMathematica', { run: (operations, payload) => operations.openInMathematica(requirePath(requireSessionId(payload))) }],
   ['close', { run: (operations, payload) => operations.close(requirePath(requireSessionId(payload))) }],
+  /* ------------------------- WLJS web notebook ------------------------- */
+  ['webStatus', { run: (operations) => operations.webStatus() }],
+  ['webStart', { run: (operations) => operations.webStart() }],
+  ['webStop', { run: (operations) => operations.webStop() }],
+  [
+    'webOpen',
+    {
+      run: (operations, payload) => {
+        const withSession = optionalSessionId(payload);
+        if (withSession.fresh !== undefined && typeof withSession.fresh !== 'boolean') {
+          throw invalidPayload('"fresh" must be a boolean', { field: 'fresh' });
+        }
+        return operations.webOpen(withSession);
+      },
+    },
+  ],
+  ['webListNotebooks', { run: (operations) => operations.webListNotebooks() }],
+  [
+    'webNewNotebook',
+    {
+      run: (operations, payload) => operations.webNewNotebook(optionalSessionId(payload)),
+    },
+  ],
+  [
+    'webSeed',
+    {
+      run: (operations, payload) => {
+        if (typeof payload?.notebook !== 'string' || payload.notebook.trim() === '') {
+          throw invalidPayload('"notebook" must be a non-empty WLJS notebook id', { field: 'notebook' });
+        }
+        return operations.webSeed({ notebook: payload.notebook.trim() });
+      },
+    },
+  ],
+  [
+    'webListCells',
+    {
+      run: (operations, payload) => operations.webListCells({ notebook: requireWebNotebook(payload) }),
+    },
+  ],
+  [
+    'webAddCells',
+    {
+      run: (operations, payload) => {
+        if (!Array.isArray(payload?.cells) || payload.cells.length === 0) {
+          throw invalidPayload('"cells" must be a non-empty array', { field: 'cells' });
+        }
+        return operations.webAddCells({ notebook: requireWebNotebook(payload), cells: payload.cells });
+      },
+    },
+  ],
+  [
+    'webEvaluate',
+    {
+      run: (operations, payload) => {
+        if (payload?.summarize !== undefined && typeof payload.summarize !== 'boolean') {
+          throw invalidPayload('"summarize" must be a boolean', { field: 'summarize' });
+        }
+        return operations.webEvaluate({ cell: requireCell(payload), summarize: payload?.summarize === true, ...optionalEvaluation(payload) });
+      },
+    },
+  ],
+  [
+    'webKernelEvaluate',
+    {
+      run: (operations, payload) => {
+        if (typeof payload?.expression !== 'string' || payload.expression.trim() === '') {
+          throw invalidPayload('"expression" must be a non-empty string', { field: 'expression' });
+        }
+        return operations.webKernelEvaluate({
+          expression: payload.expression,
+          kernel: typeof payload.kernel === 'string' ? payload.kernel : null,
+          ...optionalEvaluation(payload),
+        });
+      },
+    },
+  ],
   [
     'debug',
     {

@@ -1,6 +1,6 @@
 /**
- * The Host operation layer shared by the RPC endpoints (CONTRACT.md §2) and the
- * `mathematica_notebook` agent tool (CONTRACT.md §5).
+ * The Host operation layer shared by the RPC endpoints (CONTRACT.md 搂2) and the
+ * `mathematica_notebook` agent tool (CONTRACT.md 搂5).
  *
  * One implementation means the browser and the agent always observe the same
  * store, revisions, path rules and kernel serialization. Methods return
@@ -11,8 +11,8 @@
 import { basename } from 'node:path';
 import { ErrorCodes, PluginError, invalidPayload, optionalNumber, requireString } from './errors.js';
 
-/** Value reported by the `status` endpoint (CONTRACT.md §2). */
-export const SERVER_VERSION = '0.1.0';
+/** Value reported by the `status` endpoint (CONTRACT.md 搂2). */
+export const SERVER_VERSION = '0.2.1';
 
 /** Max output text echoed into agent-tool run results. */
 const TOOL_TEXT_LIMIT = 4000;
@@ -28,7 +28,7 @@ export const TOOL_TYPESET_PLACEHOLDER = '[typeset result rendered in the noteboo
 
 function truncate(text, limit) {
   if (typeof text !== 'string' || text.length <= limit) return text;
-  return `${text.slice(0, limit)}… [truncated]`;
+  return `${text.slice(0, limit)}鈥?[truncated]`;
 }
 
 /** JSON-safe clone for values crossing the debug probe boundary. */
@@ -83,12 +83,13 @@ export class NotebookOperations {
    * @param {string} [options.serverVersion]
    * @param {(message: string) => void} [options.logger]
    */
-  constructor({ store, kernel, paths, launcher = null, diagnostics = null, serverVersion = SERVER_VERSION, logger = null }) {
+  constructor({ store, kernel, paths, launcher = null, diagnostics = null, webNotebook = null, serverVersion = SERVER_VERSION, logger = null }) {
     this.store = store;
     this.kernel = kernel;
     this.paths = paths;
     this.launcher = launcher;
     this.diagnostics = diagnostics;
+    this.webNotebook = webNotebook;
     this.serverVersion = serverVersion;
     this.logger = typeof logger === 'function' ? logger : null;
     this._probe = null;
@@ -116,7 +117,7 @@ export class NotebookOperations {
     };
   }
 
-  /** `status` (CONTRACT.md §2). */
+  /** `status` (CONTRACT.md 搂2). */
   async status(request = {}) {
     const sessionId = typeof request.sessionId === 'string' ? request.sessionId : null;
     let notebook = null;
@@ -135,14 +136,14 @@ export class NotebookOperations {
     };
   }
 
-  /** `list` (CONTRACT.md §2). */
+  /** `list` (CONTRACT.md 搂2). */
   async list(request = {}) {
     const sessionId = typeof request.sessionId === 'string' ? request.sessionId : null;
     const listed = this.store.list(sessionId);
     return { value: listed };
   }
 
-  /** `open` (CONTRACT.md §2). */
+  /** `open` (CONTRACT.md 搂2). */
   async open(request = {}) {
     const sessionId = requireString(request, 'sessionId');
     const path = requireString(request, 'path');
@@ -150,7 +151,7 @@ export class NotebookOperations {
     return { value: { notebook: publicNotebook(doc) } };
   }
 
-  /** `create` (CONTRACT.md §2). */
+  /** `create` (CONTRACT.md 搂2). */
   async create(request = {}) {
     const sessionId = requireString(request, 'sessionId');
     let cells = null;
@@ -162,7 +163,7 @@ export class NotebookOperations {
     return { value: { notebook: publicNotebook(doc) } };
   }
 
-  /** `save` (CONTRACT.md §2). */
+  /** `save` (CONTRACT.md 搂2). */
   async save(request = {}) {
     const sessionId = requireString(request, 'sessionId');
     const path = requireString(request, 'path');
@@ -174,7 +175,7 @@ export class NotebookOperations {
     return { value: { path: result.path, revision: result.revision } };
   }
 
-  /** `saveAs` (CONTRACT.md §2). */
+  /** `saveAs` (CONTRACT.md 搂2). */
   async saveAs(request = {}) {
     const sessionId = requireString(request, 'sessionId');
     const path = requireString(request, 'path');
@@ -186,7 +187,7 @@ export class NotebookOperations {
 
   /**
    * Evaluate cells and, for successful non-trivial results, render typeset SVG
-   * bytes as RPC attachments (CONTRACT.md §1/§2).
+   * bytes as RPC attachments (CONTRACT.md 搂1/搂2).
    *
    * @returns {Promise<{value: object, attachments: Array<object>}>}
    */
@@ -251,13 +252,13 @@ export class NotebookOperations {
     return { entries, attachments };
   }
 
-  /** `restartKernel` (CONTRACT.md §2). */
+  /** `restartKernel` (CONTRACT.md 搂2). */
   async restartKernel() {
     const kernel = await this.kernel.restart();
     return { value: { kernel } };
   }
 
-  /** `openInMathematica` (CONTRACT.md §2). */
+  /** `openInMathematica` (CONTRACT.md 搂2). */
   async openInMathematica(request = {}) {
     const sessionId = requireString(request, 'sessionId');
     const path = this.paths.validate(sessionId, requireString(request, 'path'), { mustExist: true });
@@ -274,7 +275,7 @@ export class NotebookOperations {
     return { value: { launched: true, executable: launched.executable, ...(launched.pid ? { pid: launched.pid } : {}) } };
   }
 
-  /** `close` (CONTRACT.md §2). */
+  /** `close` (CONTRACT.md 搂2). */
   async close(request = {}) {
     const sessionId = requireString(request, 'sessionId');
     const path = requireString(request, 'path');
@@ -307,6 +308,7 @@ export class NotebookOperations {
       store: { notebooks: this.store.count, stats: this.store.stats },
       paths: { defaultDir, allowedRoots: sessionId ? this.paths.allowedRoots(sessionId) : [] },
       rpc: this._diagnosticsSnapshot(),
+      webNotebook: await this._webStatusOrNull(),
       notebook,
       probe: null,
     };
@@ -395,6 +397,174 @@ export class NotebookOperations {
         }),
       },
     };
+  }
+
+  /* --------------------------- WLJS web notebook -------------------------- */
+
+  _web() {
+    if (!this.webNotebook) {
+      throw new PluginError(
+        ErrorCodes.WEB_NOTEBOOK_UNAVAILABLE,
+        'The WLJS web notebook bridge is not wired in this environment (no WLJS installation detected by the Host).',
+        {},
+      );
+    }
+    return this.webNotebook;
+  }
+
+  /** Diagnostics variant of `webStatus` that never throws. */
+  async _webStatusOrNull() {
+    if (!this.webNotebook) return { available: false, reason: 'not_wired' };
+    try {
+      return await this.webNotebook.status();
+    } catch (error) {
+      return { available: false, reason: error instanceof Error ? error.message : String(error) };
+    }
+  }
+
+  /** `webStatus`: installation/runtime state plus the embed URL. */
+  async webStatus() {
+    return { value: await this._web().status() };
+  }
+
+  /** `webStart`: start the local WLJS server (idempotent) and report readiness. */
+  async webStart() {
+    const manager = this._web();
+    await manager.ensureRunning();
+    return { value: await manager.status() };
+  }
+
+  /** `webStop`: stop the local WLJS server this plugin started. */
+  async webStop() {
+    const manager = this._web();
+    const stopped = await manager.stop();
+    return { value: { ...stopped, status: await manager.status() } };
+  }
+
+  /**
+   * `webOpen`: start the server and return the URL the browser tab should show.
+   * Reuses the last notebook unless `fresh` is set, so clicking the toolbar
+   * button again brings back the same working notebook.
+   */
+  async webOpen(request = {}) {
+    const manager = this._web();
+    await manager.ensureRunning();
+    if (request.fresh !== true) {
+      const status = await manager.status();
+      const last = status.lastNotebook;
+      if (last && typeof last.url === 'string') {
+        return { value: { url: last.url, notebookId: last.id ?? null, created: false } };
+      }
+    }
+    const created = await manager.newNotebook();
+    return { value: { url: created.url, notebookId: created.id, created: true } };
+  }
+
+  /** `webListNotebooks`: notebooks currently open in the WLJS frontend. */
+  async webListNotebooks() {
+    const manager = this._web();
+    await manager.ensureRunning();
+    return { value: { notebooks: await manager.listNotebooks() } };
+  }
+
+  /** `webNewNotebook`: create a fresh WLJS notebook (no UI side effect). */
+  async webNewNotebook() {
+    const manager = this._web();
+    await manager.ensureRunning();
+    const created = await manager.newNotebook();
+    return { value: created };
+  }
+
+  /**
+   * `webSeed`: fill a freshly created notebook with an intro note and a few
+   * sample cells, then evaluate the samples once the frontend has the notebook
+   * open (best effort: a sample that fails to render is reported, not thrown).
+   */
+  async webSeed(request = {}) {
+    const manager = this._web();
+    if (typeof request.notebook !== 'string' || request.notebook.trim() === '') {
+      throw invalidPayload('"notebook" must be a non-empty WLJS notebook id', { field: 'notebook' });
+    }
+    const notebookId = request.notebook.trim();
+    await manager.waitNotebookReady(notebookId, 45_000);
+    const seeded = await manager.addCells(notebookId, [
+      {
+        content: [
+          '.md',
+          '# WLJS Notebook',
+          '',
+          'This is a **web-native Wolfram Language notebook** rendered by WLJS and computed by the',
+          'local Mathematica kernel. It runs inside the DSH sidebar, so rich and interactive output',
+          '(`Plot3D`, `Manipulate`, `Dataset`, 鈥? is rendered by the real notebook frontend.',
+          '',
+          'Press **Shift + Enter** to evaluate a cell, or use the menu to open/save `.wln` / `.nb` files.',
+        ].join('\n'),
+      },
+      { content: '2 + 2' },
+      { content: 'Plot3D[Sin[x y], {x, -3, 3}, {y, -3, 3}, ColorFunction -> "Rainbow", ImageSize -> 380]' },
+      { content: 'Manipulate[Plot[Sin[n x], {x, 0, 2 Pi}, ImageSize -> 380], {n, 1, 5, 1}]' },
+      { content: 'Dataset[<|"alpha" -> 1, "beta" -> 2.5|>]' },
+    ]);
+    const cells = Array.isArray(seeded?.Created) ? seeded.Created : [];
+    const evaluated = [];
+    // `2 + 2`, the two graphics cells and the Dataset sample: indices 1..4.
+    for (const cellId of cells.slice(1, 5)) {
+      try {
+        const output = await manager.evaluateCell(cellId, { timeLimit: 40, maxCharacters: 600 });
+        evaluated.push({ cell: cellId, ok: true, output: Array.isArray(output) ? output.map((entry) => entry?.Id ?? null) : null });
+      } catch (error) {
+        evaluated.push({ cell: cellId, ok: false, error: error instanceof Error ? error.message : String(error) });
+      }
+    }
+    return { value: { notebook: notebookId, cells, evaluated } };
+  }
+
+  /** `webListCells`: input/output cells of one WLJS notebook. */
+  async webListCells(request = {}) {
+    const manager = this._web();
+    if (typeof request.notebook !== 'string' || request.notebook.trim() === '') {
+      throw invalidPayload('"notebook" must be a non-empty WLJS notebook id', { field: 'notebook' });
+    }
+    await manager.ensureRunning();
+    return { value: { cells: await manager.listCells(request.notebook.trim()) } };
+  }
+
+  /** `webAddCells`: append input cells (`.md`, `.html`, `.js`, plain WL, 鈥?. */
+  async webAddCells(request = {}) {
+    const manager = this._web();
+    if (typeof request.notebook !== 'string' || request.notebook.trim() === '') {
+      throw invalidPayload('"notebook" must be a non-empty WLJS notebook id', { field: 'notebook' });
+    }
+    await manager.ensureRunning();
+    const added = await manager.addCells(request.notebook.trim(), request.cells);
+    return { value: { notebook: request.notebook.trim(), ...added } };
+  }
+
+  /** `webEvaluate`: evaluate one WLJS input cell; output cells come back by id. */
+  async webEvaluate(request = {}) {
+    const manager = this._web();
+    if (typeof request.cell !== 'string' || request.cell.trim() === '') {
+      throw invalidPayload('"cell" must be a non-empty WLJS cell id', { field: 'cell' });
+    }
+    await manager.ensureRunning();
+    const output = await manager.evaluateCell(request.cell.trim(), {
+      timeLimit: optionalNumber(request, 'timeLimit') ?? 40,
+      maxCharacters: optionalNumber(request, 'maxCharacters') ?? 2000,
+      summarize: request.summarize === true,
+    });
+    return { value: { cell: request.cell.trim(), output } };
+  }
+
+  /** `webKernelEvaluate`: evaluate WL directly in a ready WLJS kernel. */
+  async webKernelEvaluate(request = {}) {
+    const manager = this._web();
+    await manager.ensureRunning();
+    const result = await manager.kernelEvaluate(request.expression, {
+      kernel: typeof request.kernel === 'string' ? request.kernel : null,
+      timeLimit: optionalNumber(request, 'timeLimit') ?? 40,
+      maxCharacters: optionalNumber(request, 'maxCharacters') ?? 2500,
+    });
+    return { value: { result } };
   }
 }
 

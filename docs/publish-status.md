@@ -425,3 +425,39 @@ Commit SHAs produced this way are real commits; a commit-pinned market install w
 4. Add a new `versions[]` entry in `market/index.json` (do **not** rewrite older entries) pinned to
    the new SHA, with a new `publishTimestamp`.
 5. Validate and push; DSH indexes refresh within their 10-minute cache TTL.
+
+### Notebook 0.2.1 — WLJS web notebook (compatibility path)
+
+Release of `dsh-mathematica-notebook` that adds the local WLJS Notebook bridge behind a **Web
+notebook** toolbar button, so dynamic/rich Wolfram output that the plugin's own renderer cannot
+express is produced by a real web frontend on the same local kernel.
+
+| Item | Value |
+| --- | --- |
+| Package version | `0.2.1` |
+| New Host module | `notebook/lib/web-notebook.js` (WLJS discovery, process lifetime, `/api/notebook/...` client) |
+| New tests | `notebook/test/web-notebook.test.js` (9 cases) |
+| New endpoints / tool actions | `webStatus`, `webStart`, `webStop`, `webOpen`, `webListNotebooks`, `webNewNotebook`, `webSeed`, `webListCells`, `webAddCells`, `webEvaluate`, `webKernelEvaluate` |
+| Unit tests | `notebook`: 52/52 via `node --test` |
+| Install spec | `git+https://github.com/yhbcode000/mathematica-mcp.git#<release commit>&path:/notebook` |
+
+Pre-publication verification (local Windows 10, Mathematica 15.0.1):
+
+- **V1** WLJS Notebook 3.1.4 source tree extracted under
+  `%DSH_HOME%/artifacts/wljs-notebook/app/wljs-notebook-3.1.4`; `GET /` answers HTTP 200 and the
+  CSockets kernel prints `Windows >> Windows-x86-64`, `Loading library... LLink 8`,
+  `Succesfully loaded!`.
+- **V2** Real plugin flow through `mathematica_notebook`: `webStatus` reports
+  `available/ready/running` plus `pid`; `webStart` spawns
+  `<wolframscript> -f Scripts/start.wls` and becomes ready in ~7 s warm (~90 s cold); `webOpen`
+  creates a `llm-*.wln` quick-note and returns its encoded URL; `webSeed` appends the intro cell
+  plus four sample cells and evaluates them; `webEvaluate` evaluates one cell by id.
+- **V3** Rendering proof (headless Edge over CDP, full-page screenshot): `2 + 2` → `4`,
+  `Plot3D[..., ColorFunction -> "Rainbow"]` → interactive coloured surface,
+  `Manipulate[Plot[Sin[n x] ...]]` → slider plus live plot, markdown intro cell typeset.
+- **V4** Failure typing: missing installation → `web_notebook_unavailable` with the searched roots
+  (unit-tested); start/API failures → `web_notebook_failed` with `logTail`.
+- **V5** The toolbar button lives in the browser half, so the new button appears after the DSH page
+  reloads; the Host half (tool actions and RPC endpoints) applies on bundle install.
+
+Publication status: pending the index pin commit for this version.

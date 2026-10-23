@@ -18,6 +18,7 @@ tools) and shares its requirements — but **not** its kernel process; see
 | **Real `.nb` files** | New notebooks are written immediately as valid Wolfram notebooks; saves keep a revision counter so the tab and the agent cannot silently overwrite each other. |
 | **Open in Mathematica** | Hands the current `.nb` to your installed Mathematica front end (external window). |
 | **Agent tool `mathematica_notebook`** | The agent can list, create, read, edit and run notebooks in the same store the tab uses — so a prompt like *"在 notebook 里加一节，导出这张图的 CSV"* works without switching windows. |
+| **Web notebook (WLJS)** | The **Web notebook** toolbar button starts a local [WLJS Notebook](https://github.com/WLJSTeam/wljs-notebook) server and embeds it in a right-sidebar **Browser** tab: a full Wolfram frontend (`Manipulate`, `Dataset`, interactive 3D, Markdown/HTML/JS cells) computed by the local kernel. |
 
 ## Requirements
 
@@ -94,6 +95,39 @@ Ask in natural language; the agent maps it onto `mathematica_notebook` actions:
 The tool's actions (`list` / `create` / `read` / `edit` / `run` / `debug`) are documented in
 [CONTRACT.md](CONTRACT.md#5-agent-tool).
 
+## Web notebook (WLJS, full compatibility)
+
+The `.nb` tab renders rich output by attaching an SVG/PNG produced by the kernel — which covers 2D
+graphics, formulas, tables and raster 3D, but cannot express `Manipulate`, event handlers,
+`Dataset`, sound, or JavaScript/HTML/Markdown cells.
+
+For those, press **Web notebook** in the tab toolbar. The Host starts
+[WLJS Notebook](https://github.com/WLJSTeam/wljs-notebook) (AGPLv3) — an open-source, web-native
+Wolfram Language frontend — on demand and opens it in a right-sidebar **Browser** tab:
+
+- computed by this machine's Wolfram kernel; fully local, no cloud account;
+- full frontend compatibility: interactive 3D, `Manipulate` controls, `Dataset`, images, sound,
+  Markdown/HTML/JS/Mermaid/RevealJS cells, `.nb` import and standalone HTML export;
+- the same notebook is reachable from the agent through the tool's `web*` actions
+  (`webStatus`, `webStart`, `webOpen`, `webAddCells`, `webEvaluate`, `webKernelEvaluate`, …).
+
+Setup (one time):
+
+1. Download the WLJS Notebook **source archive** (`wljs-notebook-<version>.zip`, not the Electron
+   installer) from the [releases page](https://github.com/WLJSTeam/wljs-notebook/releases) and
+   extract it to one of: `$DSH_HOME/wljs-notebook`,
+   `$DSH_HOME/artifacts/wljs-notebook/app/wljs-notebook-3.1.4`, or any directory pointed at by
+   `WLJS_NOTEBOOK_DIR`.
+2. Make sure `wolframscript` and a licensed Mathematica/Wolfram Engine are installed. WLJS starts
+   with `wolframscript -f Scripts/start.wls`; Mathematica 14.1–15.0 is the tested range (15.0.1
+   works with a version warning).
+3. That is all — the button discovers the tree, starts the server on `127.0.0.1:20560` (loopback
+   only), and stops it when the plugin unloads. Set `WLJS_HTTP_PORT` if the default port is taken
+   (WLJS itself also accepts `Scripts/start.wls http <port> ws <port>` pairs).
+
+The first open is the slow one (WLJS loads ~30 paclets; up to a minute). Notebooks created from the
+button live in WLJS's quick-notes directory — save them from the WLJS UI to keep them.
+
 ## Two kernels, not one
 
 This is important and intentional:
@@ -141,6 +175,7 @@ explicit timeouts when needed), and a timed-out evaluation is aborted while the 
 | **No output write-back to `.nb`** | Evaluated outputs are kept in the live notebook document; the `.nb` file stores cells. Re-run cells after reopening. |
 | **External window for Mathematica** | "Open in Mathematica" launches your front end; a native notebook embedded inside DSH is not possible with the current DSH window model. |
 | **Separate kernel** | See [Two kernels, not one](#two-kernels-not-one). |
+| **WLJS is not bundled** | The full-compatibility web notebook needs a separate [WLJS Notebook](https://github.com/WLJSTeam/wljs-notebook) download (AGPLv3) plus `wolframscript`; without it the button reports `web_notebook_unavailable`, while the built-in `.nb` tab keeps working. |
 | **Single user** | The RPC channel admits only the owner browser peer and filesystem access is limited to the session directory and `$DSH_HOME/notebooks`. |
 
 ## Troubleshooting

@@ -1,7 +1,7 @@
 {
   "name": "dsh-mathematica-notebook",
-  "version": "0.1.0",
-  "description": "DeepSeek Harness sidebar Mathematica notebook: interactive Wolfram cells beside the chat, typeset SVG output, real .nb files, Open in Mathematica, and agent tools for creating, editing and running notebooks.",
+  "version": "0.2.1",
+  "description": "DeepSeek Harness sidebar Mathematica notebook: interactive Wolfram cells beside the chat, typeset SVG output, real .nb files, Open in Mathematica, and a local WLJS web notebook (full frontend compatibility) embedded in a Browser tab, plus agent tools for both.",
   "type": "module",
   "main": "index.js",
   "exports": {

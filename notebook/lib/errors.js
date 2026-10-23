@@ -18,6 +18,8 @@ export const ErrorCodes = Object.freeze({
   SYNTAX_ERROR: 'syntax_error',
   EVALUATION_FAILED: 'evaluation_failed',
   LAUNCH_FAILED: 'launch_failed',
+  WEB_NOTEBOOK_UNAVAILABLE: 'web_notebook_unavailable',
+  WEB_NOTEBOOK_FAILED: 'web_notebook_failed',
   UNKNOWN_ENDPOINT: 'unknown_endpoint',
   FORBIDDEN: 'forbidden',
   TOO_LARGE: 'too_large',

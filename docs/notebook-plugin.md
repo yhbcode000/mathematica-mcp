@@ -112,6 +112,7 @@ single file to shrink — the envelope and endpoints do not change.
 | `lib/store.js` | One document per `(sessionId, path)`: revisions, dirty tracking, 1.5 s auto-save debounce, serialized mutations shared by RPC and agent tool; output summaries for the agent tool. |
 | `lib/tools.js` | `mathematica_notebook` tool definition and dispatch onto `lib/operations.js`. |
 | `lib/launcher.js` | Native Mathematica locator and detached spawn for **Open in Mathematica**; `launch_failed` with a readable message. |
+| `lib/web-notebook.js` | Local WLJS Notebook bridge (CONTRACT §9): installation discovery, server process lifetime (`wolframscript -f Scripts/start.wls` on `127.0.0.1:20560`), promise-polled `/api/notebook/...` client, typed `web_notebook_unavailable` / `web_notebook_failed` errors. |
 
 CONTRACT.md §8 names the required modules; the landed implementation splits the error envelope (`lib/errors.js`) and the shared operation layer (`lib/operations.js`) out of `lib/rpc.js`/`lib/tools.js` without changing the wire contract. The Host half **requires** the `tools` service and optionally injects `connection` + `webServer` for
 the browser channel — a headless profile without a Web carrier keeps the agent tool and skips the
@@ -133,6 +134,10 @@ Full request/value shapes are in [`CONTRACT.md` §2](../notebook/CONTRACT.md#2-e
 | `restartKernel` | Restart and return the new kernel status. |
 | `openInMathematica` | Launch the native front end on the current `.nb`. |
 | `close` | Flush pending save and release the store entry. |
+| `webStatus` / `webStart` / `webStop` | WLJS web notebook discovery, process start (waits for HTTP) and stop. |
+| `webOpen` | Start WLJS and return the URL of the shared web notebook for the Browser tab (`fresh` creates a new one). |
+| `webListNotebooks` / `webNewNotebook` / `webSeed` | WLJS notebook listing, creation, and intro/sample seeding with best-effort evaluation. |
+| `webListCells` / `webAddCells` / `webEvaluate` / `webKernelEvaluate` | WLJS cell IO and evaluation (rendered output is produced by the real WLJS frontend). |
 
 ## 5. `.nb` codec
 
@@ -265,6 +270,7 @@ Per [`CONTRACT.md` §7](../notebook/CONTRACT.md#7-client-registrations-browser-h
 | Files | One default dir + session dir; no folder browser | Notebook dir picker, recent files |
 | Collaboration | Owner browser peer only | Multi-session sharing (out of scope for v1) |
 | Foreign `.nb` | Read-only unless fully mapped; Save As allowed | Styling-preserving round-trip |
+| Compatibility outputs | This tab's own renderer covers 2D/symbolic (SVG) and 3D/raster (PNG) only; dynamic/`Dataset`/JS/HTML cells need the WLJS web notebook | Bundle a compatible frontend inside the plugin (WLJS is a separate AGPLv3 app today) |
 
 ## 13. Release status
 
@@ -277,6 +283,10 @@ install checks — lives in
 pinned `versions[]` entries without rewriting older ones. Do not mark release boxes before their
 evidence exists.
 
+`0.2.1` adds [§15](#15-web-notebook-wljs-compatibility-path) (the WLJS web-notebook compatibility
+path); its publication evidence is tracked in
+[`publish-status.md`](publish-status.md#notebook-021--wljs-web-notebook-compatibility-path).
+
 ## 14. Prior art and scope
 
 This plugin is a UI integration for a locally licensed Wolfram kernel, not a new MCP server and not
@@ -286,3 +296,30 @@ a reimplementation of Wolfram's front end. The prior-art note in the root
 around it remain the reference implementations for model-facing Wolfram tools; this plugin's
 distinct value is the **in-DSH sidebar notebook with real `.nb` files** and agent edits through the
 same store.
+
+## 15. Web notebook (WLJS compatibility path)
+
+`lib/web-notebook.js` + the **Web notebook** toolbar button exist because the `.nb` tab's own
+renderer cannot represent every Wolfram output kind. Instead of re-implementing Wolfram's frontend
+(the reverse-engineering path the user explicitly ruled out), the plugin drives the open-source
+web-native notebook that already exists:
+
+- **Product:** [WLJS Notebook](https://github.com/WLJSTeam/wljs-notebook) (AGPLv3), a web frontend
+  that computes with the local Wolfram Engine. Mathematica 14.1–15.0 is the tested range; 15.0.1
+  loads with the app's own "version is newer" warning.
+- **Process:** `<wolframscript> -f Scripts/start.wls` with `cwd` at the extracted tree. Startup
+  takes 20–90 s on a warm machine (≈30 paclets), HTTP 127.0.0.1:20560, loopback only. The plugin
+  owns the process and stops it on dispose; the server is shared by the toolbar, the agent tool and
+  every notebook tab.
+- **Embedding:** the browser half calls `ctx.sidebarRight.openTab('browser', { params: { url } })`
+  — the shipped Browser carrier (Electron `<webview>` on Desktop, sandboxed iframe on Web). No
+  iframe of our own, no CSP workaround, and the WLJS origin stays outside the DSH origin.
+- **Agent path:** the WLJS JSON API is driven directly (`/api/notebook/new|readyQ|cells/*`,
+  `/api/promise/` polling); `mathematica_notebook` exposes it as the `web*` actions. The WLJS MCP
+  server that ships with the app is deliberately *not* registered as a second DSH MCP server —
+  one tool surface, one auth boundary.
+- **Verification tooling:** the probe used during development
+  (`D:\workspace\lead-recon\wljs-probe.mjs` at the time of writing) creates a notebook, adds
+  `2+2` / `Plot3D` / `Manipulate` / `Dataset` cells, evaluates them through the API and screenshots
+  the resulting page over CDP. Expected screenshot content: `4`, an interactive rainbow surface,
+  a `Manipulate` slider with its plot, and a dataset table.

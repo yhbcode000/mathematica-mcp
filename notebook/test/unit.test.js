@@ -59,7 +59,7 @@ function makePaths() {
 test('paths: resolves the session working directory and default notebook dir', () => {
   const { paths, cwd, dshHome } = makePaths();
   assert.equal(paths.defaultDir('session-1'), join(cwd, 'notebooks'));
-  // No resolvable Session -> CONTRACT.md §6 fallback: $DSH_HOME/notebooks.
+  // No resolvable Session -> CONTRACT.md 搂6 fallback: $DSH_HOME/notebooks.
   assert.equal(paths.defaultDir('anonymous'), join(dshHome, 'notebooks'));
   assert.deepEqual(paths.allowedRoots('session-1'), [cwd, join(dshHome, 'notebooks')]);
   assert.deepEqual(paths.allowedRoots('anonymous'), [join(dshHome, 'notebooks')]);
@@ -606,6 +606,10 @@ function captureOperations() {
       readForTool: value('read'),
       editForTool: value('edit'),
       runForTool: value('run'),
+      webStatus: value('webStatus'),
+      webOpen: value('webOpen'),
+      webAddCells: value('webAddCells'),
+      webEvaluate: value('webEvaluate'),
       debug: async (payload) => {
         calls.push(['debug', payload]);
         return { value: { ok: true, action: 'debug', kernel: { state: 'stopped' }, rpc: { helloCount: 3, lastHello: { at: 'now' } } } };
@@ -619,7 +623,12 @@ test('tools: definition shape and action mapping onto the operation layer', asyn
   const tool = createNotebookTool({ operations, serverVersion: '0.1.0' });
   assert.equal(tool.name, 'mathematica_notebook');
   assert.equal(tool.parameters.required[0], 'action');
-  assert.deepEqual(tool.parameters.properties.action.enum, ['list', 'create', 'read', 'edit', 'run', 'debug']);
+  const actions = tool.parameters.properties.action.enum;
+  // The `.nb` actions stay first (compatible order); web-notebook actions extend them.
+  assert.deepEqual(actions.slice(0, 6), ['list', 'create', 'read', 'edit', 'run', 'debug']);
+  for (const action of ['webStatus', 'webStart', 'webStop', 'webOpen', 'webSeed', 'webAddCells', 'webEvaluate']) {
+    assert.ok(actions.includes(action), `missing action ${action}`);
+  }
   assert.equal(tool.parameters.additionalProperties, false);
   assert.equal(tool.output.schema.type, 'string');
   assert.equal(tool.output.render(null, 'x')[0].type, 'text');
@@ -747,7 +756,7 @@ test('index: apply registers the tool and the RPC route, debug reports health', 
   assert.equal(debugResult.rpc.helloCount, 1);
   assert.equal(debugResult.rpc.lastHello.payload.attempt, 1);
   assert.equal(debugResult.kernel.state, 'stopped');
-  assert.equal(debugResult.serverVersion, '0.1.0');
+  assert.equal(debugResult.serverVersion, '0.2.1');
 
   const statusResponse = await (async () => {
     const req = mockRequest({ body: statusBody('s1') });
@@ -755,7 +764,7 @@ test('index: apply registers the tool and the RPC route, debug reports health', 
     await routes[0].handler(req, res);
     return JSON.parse(res.body.toString('utf8'));
   })();
-  assert.equal(statusResponse.result.value.serverVersion, '0.1.0');
+  assert.equal(statusResponse.result.value.serverVersion, '0.2.1');
   assert.equal(statusResponse.result.value.kernel.state, 'stopped');
 
   assert.ok(disposers.length >= 2);
@@ -786,7 +795,7 @@ test('index: debug probe runs a real endpoint through the dispatch table', async
   assert.equal(result.ok, true);
   assert.equal(result.probe.endpoint, 'status');
   assert.equal(result.probe.result.ok, true);
-  assert.equal(result.probe.result.value.serverVersion, '0.1.0');
+  assert.equal(result.probe.result.value.serverVersion, '0.2.1');
 
   const unknown = JSON.parse(await tools[0].execute({ action: 'debug', probeEndpoint: 'nope' }, {}));
   assert.equal(unknown.probe.result.ok, false);
