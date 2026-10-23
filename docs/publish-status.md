@@ -220,34 +220,45 @@ remaining open item is the manual real-browser visual pass.
 | --- | --- |
 | DSH bundle package | `dsh-mathematica-notebook` 0.1.0 (bundle directory `notebook/`) |
 | Market entry name (must equal `package.json` name) | `dsh-mathematica-notebook` |
-| Market index | same index URL as above, with a new `plugins[]` entry |
-| Market install spec form | `git+https://github.com/yhbcode000/mathematica-mcp.git#<pinned commit>&path:/notebook` |
-| Repo commit containing `notebook/` | `<filled by the publish task>` |
+| Market index | same index URL as above; the notebook entry was added and pinned in this release |
+| Release commit (contains `notebook/`) | `94091e41e1425c6074779f9c7b30a0351705d569` |
+| Market install spec | `git+https://github.com/yhbcode000/mathematica-mcp.git#94091e41e1425c6074779f9c7b30a0351705d569&path:/notebook` |
+| Market-index commit (`main` after publish) | `0ccc9a590e6de71109e29f3b6528cc10e6935095` |
+| Raw index URL / status / bytes / SHA-256 | `https://raw.githubusercontent.com/yhbcode000/mathematica-mcp/main/market/index.json` → HTTP 200, no redirect, 5,135 bytes, `e248c3a9ee6e8c863e82eda30f39f631fdae36d028d3ec25ed7e3204843dd2d1` |
 | Icon / locale | `notebook/icon.svg`, `notebook/locale/{en,zh}.json` |
 | Maintainer documentation | [`notebook-plugin.md`](notebook-plugin.md) |
 
 ### Release checklist (evidence required before `[x]`)
 
-- [ ] Implementation complete: `notebook/index.js` + `notebook/lib/**` + `notebook/client.js` from the
-      implementation tasks, and `node --test` green at the repo root (includes `notebook/test/**`).
-- [ ] Vendored kernel bridge in sync: `node notebook/scripts/sync-kernel.mjs --check` exits 0.
-- [ ] Host half importable without DSH:
-      `node --input-type=module -e "await import('./notebook/index.js')"`.
-- [ ] Bundle installs in a DSH profile (`plugin_manager` `install_bundle`, target `<repo>/notebook`) →
-      `application: "applied"`, no warnings.
-- [ ] Browser half verified in the DSH Web UI with the checklist below.
-- [ ] Agent tool verified: `mathematica_notebook` `create` / `read` / `edit` / `run` against a real
-      kernel, and agent edits become visible in the open tab after the 2 s poll.
-- [ ] `market/index.json` gains the notebook entry (`name` = `dsh-mathematica-notebook`, version
-      `0.1.0`, `source.path` = `notebook`) and passes `node market/validate-index.mjs`.
-- [ ] Repo pushed; commit SHA recorded; market entry pinned to a commit whose tree contains
-      `notebook/**`; index pushed again.
-- [ ] Raw index URL returns 200 with no redirect; shipped-validator parse OK; the pinned commit tree
-      contains `notebook/lib/**`, `notebook/client.js`, `notebook/kernel/**`.
-- [ ] CI workflow source updated for the notebook checks (repo copy **and** `docs/ci-workflow.yml`;
-      CI enforces the two bodies are identical).
-- [ ] User docs' claims match observed behavior: two independent kernels, code-cells-only v1, 2D SVG / 3D PNG output,
-      read-only foreign `.nb` imports.
+- [x] Implementation complete: `notebook/index.js` + `notebook/lib/**` (9 modules) + `notebook/client.js`;
+      repo-root `node --test` = 95/95 pass, `cd notebook && node --test` = 43/43 pass, skip mode
+      27 pass / 16 skip / 0 fail (evidence N4).
+- [x] Vendored kernel bridge in sync: `node notebook/scripts/sync-kernel.mjs --check` exits 0
+      (kernel.js 861d5d28…, detect.js cc3c8cf8…); `dsh/scripts/sync-server.mjs --check` in sync (5 files).
+- [x] Host half importable without DSH
+      (`node --input-type=module -e "await import('./notebook/index.js')"`), and the market-installed
+      copy imports standalone (exports: `apply`, `inject`, `name`, `pluginHealth`, `RPC_CHANNEL`,
+      `SERVER_VERSION`, `ErrorCodes`, `PluginError`) — evidence N1.
+- [x] Bundle installs in a DSH profile: Lead's `plugin_manager` `install_bundle` (link:) returned
+      `application: "applied"`, client half loaded, both sidebar bodies registered; the released
+      market spec also installs and composes in a throwaway profile — evidence N1/N2.
+- [ ] Browser half verified in the DSH Web UI with the checklist below. **Open item:** the automated
+      fake-React/fake-Host harness (60/60) and live post-fix RPC/kernel probes passed (N2), but the
+      real-browser visual pass still needs user action.
+- [x] Agent tool verified: `mathematica_notebook` `create` / `read` / `edit` / `run` against the real
+      kernel, edits observed through the same store; agent edits appear in an open tab through the 2 s
+      poll (live probe) — evidence N3.
+- [x] `market/index.json` gains the notebook entry (`name` = `dsh-mathematica-notebook`, version
+      `0.1.0`, `source.path` = `notebook`) and passes `node market/validate-index.mjs` — evidence N5.
+- [x] Repo pushed; release commit recorded; market entry pinned to a commit whose tree contains
+      `notebook/**`; index pushed again — evidence N4/N5.
+- [x] Raw index URL returns 200 with no redirect; shipped-validator parse OK (two plugins); the pinned
+      commit tree contains `notebook/lib/**`, `notebook/client.js`, `notebook/kernel/**` — evidence N5/N6.
+- [x] CI workflow source updated for the notebook checks (repo copy **and** `docs/ci-workflow.yml`;
+      both bodies identical, enforced by a CI step). Pushing `.github/workflows/**` remains blocked by
+      the publication credential's missing `workflow` scope (documented route: E8).
+- [x] User docs' claims match observed behavior: two independent kernels, code-cells-only v1, 2D SVG /
+      3D PNG output, read-only foreign `.nb` imports, text placeholders/caps.
 
 ### Browser verification checklist (manual — this repository has no browser-control harness)
 
@@ -269,19 +280,75 @@ remaining open item is the manual real-browser visual pass.
 ### Evidence placeholders
 
 <!-- NOTEBOOK EVIDENCE -->
-- N1 — bundle install result: `<pending>`
-- N2 — browser verification: `<pending>`
-- N3 — agent tool calls (`create`/`read`/`edit`/`run`): `<pending>`
-- N4 — repo commit SHA containing `notebook/`: `<pending>`
-- N5 — market pin + validator output: `<pending>`
-- N6 — raw index URL status: `<pending>`
+- **N1 — bundle install result.** Real profile (Lead): `plugin_manager` `install_bundle` (link:) →
+  `application: "applied"`; client half loaded and both sidebar bodies registered in
+  `sidebar.right.pane.tab` (keys `dsh-mathematica-notebook/page`,
+  `dsh-mathematica-notebook/file`); authenticated client→Host hello present
+  (`lastHello.payload.client = dsh-mathematica-notebook`). Release-time market install check (this
+  publish): `pnpm add "git+https://github.com/yhbcode000/mathematica-mcp.git#94091e4…&path:/notebook"`
+  in a throwaway DSH profile → `+ dsh-mathematica-notebook 0.1.0`; installed payload contains
+  `client.js`, `index.js`, `lib/*.js` (9 modules), `kernel/{kernel,detect}.js`,
+  `cordis.patch.yml`, `locale/*`, `icon.svg`; after selecting the bundle,
+  `dsh --dump-config` composes `- id: dsh-mathematica-notebook / name: dsh-mathematica-notebook /
+  config: {}`; the installed Host half imports standalone.
+- **N2 — browser verification.** Automated client harness (external fake-React + fake-Host over the
+  real `client.js`): 60/60 checks (create→evaluate→SVG pretty/raw→debounced save→conflict→
+  keep-local→restart→open-in-mathematica→file-address open→failure/retry→unmount cleanup), plus the
+  PNG/SVG MIME-sniff fix cases. Post-fix live RPC probes through the same dispatch the browser uses:
+  3D `Plot3D[…]` → text `[typeset output]` + 249,163-byte PNG attachment (~1.1 s);
+  2D `Plot[…]` → 31,371-byte SVG (~1.55 s); symbolic `Integrate[x^2,x]` → 10,162-byte SVG;
+  placeholders uniform. **Real-browser visual pass remains pending user action** (manual table above).
+- **N3 — agent tool calls.** `create` → `<cwd>/notebooks/Untitled-1.nb` (rev 1); `edit`
+  (replace+insert) → rev 2; `run` all → `2+2`→4, `Plot`→SVG, `Integrate[x^2,x]`→`x^3/3`,
+  multi-statement → 6; `read` preserved code incl. newlines; saved `.nb` re-imported by the separate
+  MCP kernel (`Import[…,"NB"]` → 4 cells); foreign styled `.nb` opened read-only and `saveAs`
+  produced an editable copy; timeout probe → `kernel_timeout` at 2,010 ms with the kernel still
+  running; `openInMathematica` → `{"launched":true,"executable":"C:\\Program Files\\Wolfram
+  Research\\Wolfram\\15.0\\WolframNB.exe","pid":25420}`; `close` → `{closed:true}` and the
+  store entry is deleted/tombstoned (no premature count, save-after-close → `not_found`).
+  Post-fix tool `run` placeholders are uniform for 2D/3D/symbolic; scalar results keep real values.
+- **N4 — repo commits.** Release commit (contains `notebook/`):
+  `94091e41e1425c6074779f9c7b30a0351705d569` ("Release 0.1.0: dsh-mathematica-notebook sidebar
+  notebook plugin", 30 files, +10,429/−33); market-index commit:
+  `0ccc9a590e6de71109e29f3b6528cc10e6935095`. Pinned tree has 73 entries; all required paths present
+  (`notebook/package.json`, `cordis.patch.yml`, `client.js`, `index.js`, `lib/*` (9),
+  `kernel/{kernel,detect}.js`, `locale/*`, `icon.svg`, `README.md`, `CONTRACT.md`, `test/*`,
+  `docs/notebook-plugin.md`, `README.md`, `src/kernel.js`); no `.github/` in the tree. The 14
+  published file SHA-256 prefixes match the Lead's release hashes with 0 mismatches.
+- **N5 — market pin + validator.** Entry `dsh-mathematica-notebook` 0.1.0,
+  `source = { git, url: https://github.com/yhbcode000/mathematica-mcp, commit: 94091e4…,
+  path: notebook }`, `engines.dsh: ">=0.2.0"`, category `integration`, label
+  `computer-algebra`, en+zh title/description, icon main-branch URL. `node
+  market/validate-index.mjs` on the working copy and on the downloaded document → valid format 1
+  (3 versions across 2 plugins). **Shipped validator** (`parseMarketIndex`, 0.2.1-rc.2, imported from
+  `app.asar` via Electron-as-node) on the live raw URL → OK: format 1, plugins = 2, versions
+  normalized descending. The existing `dsh-mathematica-mcp` 0.1.0/0.1.1 entries are untouched.
+- **N6 — raw index URL.** `GET
+  https://raw.githubusercontent.com/yhbcode000/mathematica-mcp/main/market/index.json` → HTTP 200,
+  0 redirects, 5,135 bytes, SHA-256
+  `e248c3a9ee6e8c863e82eda30f39f631fdae36d028d3ec25ed7e3204843dd2d1` (identical to the working-copy
+  file), JSON parses.
 <!-- /NOTEBOOK EVIDENCE -->
 
 ### Local integration evidence (Lead, real DSH profile)
 
-<!-- Filled with the final post-fix evidence block when the release commit is authorized; the
-pre-fix integration run is not published. -->
-`<pending>`
+Recorded from the Lead's real-profile verification after the two polish fixes (2026-10-23 ~22:52
+Asia/Shanghai), plus the release-time checks in N1/N4/N5/N6:
+
+- Bundle reinstalled after the fixes; debug: RPC registered/mounted, authenticated client hello
+  present (client HMR picked up the MIME-sniff build), kernel 15.0.1 at
+  `C:\Program Files\Wolfram Research\Wolfram\15.0\math.exe`.
+- Rich output after the fix: 3D `Plot3D[…] ` → PNG attachment (249,163 B, PNG-signature asserted in
+  tests, ~1.1 s), 2D `Plot[…]` → SVG (31,371 B), symbolic result → SVG (10,162 B); all three cells
+  report the uniform short placeholder instead of tens of KB of `InputForm`.
+- Tool `run` placeholders uniform for 2D SVG and 3D PNG; scalar results keep their real values.
+- `close` flushes/disposes/deletes/tombstones the store entry (store count drops, no resurrection,
+  save after close → `not_found`, open reloads).
+- Tests after fixes: notebook `node --test` 43/43; repo-root `node --test` 95/95 (22.4 s, exit 0;
+  one earlier 94/95 run was a flake under parallel kernel load — three subsequent runs, including
+  this release run, were 95/95); skip mode 27 pass / 16 skip / 0 fail; both sync checks green.
+- Uninstall/reinstall left the profile clean (the MCP bundle was untouched); a stale pnpm `link:`
+  symlink can remain after removal (cosmetic, see notes below).
 
 ### Known cosmetic notes (record, not release blockers)
 
