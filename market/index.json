@@ -74,6 +74,19 @@
           "engines": {
             "dsh": ">=0.2.0"
           }
+        },
+        {
+          "version": "0.1.1",
+          "publishTimestamp": 1792764006,
+          "source": {
+            "type": "git",
+            "url": "https://github.com/yhbcode000/mathematica-mcp",
+            "commit": "2bb92fe59525c61b5c747d705e216b92e73ce9c6",
+            "path": "dsh"
+          },
+          "engines": {
+            "dsh": ">=0.2.0"
+          }
         }
       ]
     }
