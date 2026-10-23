@@ -439,7 +439,10 @@ express is produced by a real web frontend on the same local kernel.
 | New tests | `notebook/test/web-notebook.test.js` (9 cases) |
 | New endpoints / tool actions | `webStatus`, `webStart`, `webStop`, `webOpen`, `webListNotebooks`, `webNewNotebook`, `webSeed`, `webListCells`, `webAddCells`, `webEvaluate`, `webKernelEvaluate` |
 | Unit tests | `notebook`: 52/52 via `node --test` |
-| Install spec | `git+https://github.com/yhbcode000/mathematica-mcp.git#<release commit>&path:/notebook` |
+| Install spec | `git+https://github.com/yhbcode000/mathematica-mcp.git#a7f1ec988cdfbe703b1b3ba57566fb2a1b7623c3&path:/notebook` |
+| Release commit | `a7f1ec988cdfbe703b1b3ba57566fb2a1b7623c3` |
+| Market pin commit (`main`) | `00e7a1b0724dac6417ff254a6284ce230f1811a7` |
+| Index file SHA-256 (local == published) | `a5baca96319e39627792893069329251ffbfb4f28444c6409dc7c7b79c15cfb7` |
 
 Pre-publication verification (local Windows 10, Mathematica 15.0.1):
 
@@ -460,4 +463,8 @@ Pre-publication verification (local Windows 10, Mathematica 15.0.1):
 - **V5** The toolbar button lives in the browser half, so the new button appears after the DSH page
   reloads; the Host half (tool actions and RPC endpoints) applies on bundle install.
 
-Publication status: pending the index pin commit for this version.
+Publication status: **published** — release commit `a7f1ec9`, market index updated in `00e7a1b`,
+raw index verified HTTP 200 (6,073 bytes) with matching SHA-256, `market/validate-index.mjs` passes
+for all four entries (`dsh-mathematica-mcp@0.1.0/0.1.1`,
+`dsh-mathematica-notebook@0.1.0/0.2.1`), and the repository suite is 104/104 (`node --test` from the
+repository root).
