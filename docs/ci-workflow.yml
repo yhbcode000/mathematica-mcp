@@ -1,0 +1,179 @@
+# CI workflow source (ready to activate)
+#
+# GitHub refuses to create or update files under .github/workflows/ unless the
+# credential has the workflow OAuth scope (or a PAT/App token with Workflows
+# write permission). This repository's publication token had repo+gist+read:org
+# only, so the file is parked here and can be activated by a credential with that
+# scope:
+#
+#   gh auth refresh -h github.com -s workflow      # one-time, opens a browser
+#   Copy-Item docs/ci-workflow.yml .github/workflows/ci.yml
+#   git add .github/workflows/ci.yml
+#   git commit -m "Add CI workflow"
+#   git push
+#
+# The workflow itself is validated by this repository's own market/bundle checks
+# and by running its steps locally (node --test, node dsh/scripts/sync-server.mjs
+# --check, node market/validate-index.mjs).
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  server-tests:
+    name: Server tests (Node ${{ matrix.node-version }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        node-version: ['18.x', '20.x', '22.x']
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+
+      # The server has no runtime dependencies, so there is nothing to install.
+      # Tests that need a Mathematica kernel skip themselves when no kernel is
+      # available (this CI has none); see test/ for the detection logic.
+      # Note: `node --test` (auto-discovery) is used instead of `node --test test/`
+      # because Node 24 treats a positional directory as a single test entry.
+      - name: Run server tests
+        run: node --test
+        env:
+          CI: 'true'
+          # Belt-and-braces: the suite also auto-skips kernel tests when no kernel is
+          # found, but CI must never depend on that detection.
+          MATHEMATICA_MCP_TEST_SKIP_KERNEL: '1'
+
+      - name: Smoke-test the MCP handshake
+        shell: bash
+        run: |
+          node - <<'EOF'
+          const { spawn } = require('node:child_process')
+          const child = spawn(process.execPath, ['bin/mathematica-mcp.js'], { stdio: ['pipe', 'pipe', 'inherit'] })
+          let buffered = ''
+          const send = (message) => child.stdin.write(JSON.stringify(message) + '\n')
+          const timeout = setTimeout(() => { console.error('timed out waiting for initialize response'); child.kill(); process.exit(1) }, 20000)
+          child.stdout.on('data', (chunk) => {
+            buffered += chunk
+            for (const line of buffered.split('\n').slice(0, -1)) {
+              if (!line.trim()) continue
+              const message = JSON.parse(line)
+              if (message.id === 1) {
+                if (!message.result || !message.result.serverInfo) { console.error('bad initialize result'); child.kill(); process.exit(1) }
+                send({ jsonrpc: '2.0', method: 'notifications/initialized' })
+                send({ jsonrpc: '2.0', id: 2, method: 'tools/list', params: {} })
+              }
+              if (message.id === 2) {
+                const names = (message.result?.tools ?? []).map((tool) => tool.name)
+                const expected = ['mathematica_evaluate', 'mathematica_export', 'mathematica_kernel_status', 'mathematica_information']
+                const missing = expected.filter((name) => !names.includes(name))
+                if (missing.length) { console.error('missing tools: ' + missing.join(', ') + ' (got: ' + names.join(', ') + ')'); child.kill(); process.exit(1) }
+                clearTimeout(timeout)
+                console.log('initialize + tools/list OK: ' + names.join(', '))
+                child.kill()
+                process.exit(0)
+              }
+            }
+            buffered = buffered.slice(buffered.lastIndexOf('\n') + 1)
+          })
+          child.on('exit', (code) => { if (code !== 0 && code !== null) { console.error('server exited ' + code); process.exit(1) } })
+          send({ jsonrpc: '2.0', id: 1, method: 'initialize', params: { protocolVersion: '2025-06-18', capabilities: {}, clientInfo: { name: 'ci', version: '0.0.0' } } })
+          EOF
+
+  package-validate:
+    name: Validate package layout, bundle and market index
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.x'
+
+      - name: Validate JSON files and bundle manifest
+        run: |
+          node - <<'EOF'
+          const { readFileSync, existsSync, statSync } = require('node:fs')
+          const failures = []
+          const check = (ok, message) => { if (!ok) failures.push(message) }
+          const readJson = (path) => JSON.parse(readFileSync(path, 'utf8'))
+
+          const root = readJson('package.json')
+          check(root.name === 'mathematica-mcp', 'root package.json name must be mathematica-mcp')
+          check(root.type === 'module', 'root package.json must be ESM (type: module)')
+          check((root.bin ?? {})['mathematica-mcp'] === './bin/mathematica-mcp.js', 'root package.json bin entry missing')
+          check(Object.keys(root.dependencies ?? {}).length === 0, 'root package must have zero runtime dependencies')
+
+          const bundle = readJson('dsh/package.json')
+          check(bundle.name === 'dsh-mathematica-mcp', 'bundle name must be dsh-mathematica-mcp')
+          check(typeof bundle.dsh?.bundle?.patch === 'string', 'bundle must declare dsh.bundle.patch')
+          const patch = bundle.dsh?.bundle?.patch ?? ''
+          check(existsSync('dsh/' + patch), `bundle patch file ${patch} is missing`)
+          check(Array.isArray(bundle.files) && bundle.files.includes('server/**'), 'bundle files must include server/**')
+          check(bundle.files.includes('cordis.patch.yml'), 'bundle files must include cordis.patch.yml')
+          check(bundle.files.includes('locale/*.json'), 'bundle files must include locale/*.json')
+          check(bundle.files.includes('icon.svg'), 'bundle files must include icon.svg')
+          check(bundle.exports?.['./icon'] === './icon.svg', 'bundle must export ./icon')
+          check(bundle.exports?.['./locale/*.json'] === './locale/*.json', 'bundle must export ./locale/*.json')
+
+          for (const locale of ['en', 'zh']) {
+            const text = readJson(`dsh/locale/${locale}.json`)
+            check(typeof text.meta?.title === 'string' && text.meta.title.length > 0, `dsh/locale/${locale}.json meta.title missing`)
+            check(typeof text.meta?.description === 'string' && text.meta.description.length > 0, `dsh/locale/${locale}.json meta.description missing`)
+          }
+
+          check(existsSync('dsh/server/bin/mathematica-mcp.js'), 'dsh/server/bin/mathematica-mcp.js is missing (run node dsh/scripts/sync-server.mjs)')
+          check(existsSync('dsh/server/src/server.js'), 'dsh/server/src/server.js is missing (run node dsh/scripts/sync-server.mjs)')
+          check(existsSync('dsh/server/package.json'), 'dsh/server/package.json is missing (the server reads ../package.json for its version metadata)')
+
+          const iconSize = existsSync('dsh/icon.svg') ? statSync('dsh/icon.svg').size : 0
+          check(iconSize > 100 && iconSize <= 256 * 1024, 'dsh/icon.svg must exist and be at most 256 KiB')
+          check(readFileSync('dsh/icon.svg', 'utf8').includes('<svg'), 'dsh/icon.svg must be SVG')
+
+          check(existsSync('market/index.json'), 'market/index.json is missing')
+          check(existsSync('LICENSE'), 'LICENSE is missing')
+
+          if (failures.length) { for (const failure of failures) console.error('FAIL: ' + failure); process.exit(1) }
+          console.log('package layout, bundle manifest and display resources OK')
+          EOF
+
+      - name: Validate market index (format 1)
+        run: node market/validate-index.mjs market/index.json
+
+      - name: Verify dsh/server is in sync with bin/ + src/
+        run: node dsh/scripts/sync-server.mjs --check
+
+      - name: Validate bundle patch structure and guardrails
+        run: |
+          node - <<'EOF'
+          const { readFileSync } = require('node:fs')
+          const text = readFileSync('dsh/cordis.patch.yml', 'utf8')
+          const failures = []
+          const check = (ok, message) => { if (!ok) failures.push(message) }
+          // The patch uses the DSH Loader's custom !!js tag, which generic YAML parsers do
+          // not understand. These text assertions pin the structure and the launch guardrails;
+          // the authoritative parse check is `dsh --profile <profile> --dump-config` (see
+          // docs/publish-status.md) against a real DSH installation.
+          check(/^- insert:/m.test(text), 'patch must contain a top-level insert list')
+          check(text.includes('@deepseek-ai/dsh-mcp-client'), 'patch must insert @deepseek-ai/dsh-mcp-client')
+          check(/serverName:\s*mathematica\b/.test(text), 'serverName must be mathematica')
+          check(/transport:\s*stdio\b/.test(text), 'transport must be stdio')
+          check(/toolCallTimeoutMs:\s*180000\b/.test(text), 'toolCallTimeoutMs must be 180000')
+          check(/failOnStartupError:\s*false\b/.test(text), 'failOnStartupError must be false')
+          check(/command:\s*!!js\s+process\.env\.MATHEMATICA_MCP_NODE\s*\|\|\s*process\.execPath/.test(text), 'command must be process.execPath with a MATHEMATICA_MCP_NODE override')
+          check(text.includes('ELECTRON_RUN_AS_NODE'), 'env must set ELECTRON_RUN_AS_NODE')
+          check(text.includes('ctx.baseUrl'), 'path resolution must use ctx.baseUrl')
+          check((text.match(/^\s+- !!js/mg) ?? []).length === 1, 'config.args must have exactly one !!js entry')
+          if (failures.length) { for (const failure of failures) console.error('FAIL: ' + failure); process.exit(1) }
+          console.log('bundle patch structure and guardrails OK')
+          EOF
