@@ -89,6 +89,55 @@
           }
         }
       ]
+    },
+    {
+      "name": "dsh-mathematica-notebook",
+      "title": {
+        "en": "Mathematica Notebook",
+        "zh": "Mathematica 笔记本"
+      },
+      "description": {
+        "en": "Interactive Mathematica notebook in the DSH right sidebar: run Wolfram Language cells beside the chat, typeset SVG for 2D/symbolic output and PNG for 3D graphics, edit real .nb files with revision-safe saves, open them in Mathematica, and let the agent create, edit and run notebooks through the mathematica_notebook tool. Uses its own local Wolfram kernel, separate from the mcp__mathematica__* tool kernel.",
+        "zh": "在 DSH 右侧边栏中使用的交互式 Mathematica 笔记本：在对话旁运行 Wolfram 语言单元格，二维/符号结果以 SVG 排版显示、三维图形以 PNG 显示，编辑真实 .nb 文件并保证保存时版本安全，可用 Mathematica 打开，并允许智能体通过 mathematica_notebook 工具创建、编辑和运行笔记本。使用独立的本地 Wolfram 内核（与 mcp__mathematica__* 工具内核相互独立）。"
+      },
+      "author": "yhbcode000",
+      "homepage": "https://github.com/yhbcode000/mathematica-mcp",
+      "repository": {
+        "url": "https://github.com/yhbcode000/mathematica-mcp",
+        "directory": "notebook"
+      },
+      "icon": "https://raw.githubusercontent.com/yhbcode000/mathematica-mcp/main/notebook/icon.svg",
+      "metadata": {
+        "category": "integration",
+        "labels": [
+          "computer-algebra"
+        ],
+        "keywords": [
+          "mathematica",
+          "wolfram",
+          "notebook",
+          "nb",
+          "sidebar",
+          "cells",
+          "dsh",
+          "plugin"
+        ]
+      },
+      "versions": [
+        {
+          "version": "0.1.0",
+          "publishTimestamp": 1792795878,
+          "source": {
+            "type": "git",
+            "url": "https://github.com/yhbcode000/mathematica-mcp",
+            "commit": "94091e41e1425c6074779f9c7b30a0351705d569",
+            "path": "notebook"
+          },
+          "engines": {
+            "dsh": ">=0.2.0"
+          }
+        }
+      ]
     }
   ]
 }
