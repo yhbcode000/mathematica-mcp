@@ -1,0 +1,65 @@
+{
+  "name": "dsh-mathematica-notebook",
+  "version": "0.1.0",
+  "description": "DeepSeek Harness sidebar Mathematica notebook: interactive Wolfram cells beside the chat, typeset SVG output, real .nb files, Open in Mathematica, and agent tools for creating, editing and running notebooks.",
+  "type": "module",
+  "main": "index.js",
+  "exports": {
+    ".": "./index.js",
+    "./client": "./client.js",
+    "./package.json": "./package.json",
+    "./locale/*.json": "./locale/*.json",
+    "./icon": "./icon.svg"
+  },
+  "files": [
+    "index.js",
+    "client.js",
+    "lib/**",
+    "kernel/**",
+    "cordis.patch.yml",
+    "locale/*.json",
+    "icon.svg",
+    "README.md",
+    "CONTRACT.md"
+  ],
+  "scripts": {
+    "test": "node --test"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web",
+      "immediately": true,
+      "inject": [
+        "@deepseek-ai/dsh-client-connection",
+        "@deepseek-ai/dsh-client-ui-sidebar-right",
+        "@deepseek-ai/dsh-client-locale",
+        "@deepseek-ai/dsh-client-ui-session"
+      ]
+    }
+  },
+  "license": "MIT",
+  "author": "yhbcode000",
+  "keywords": [
+    "dsh",
+    "dsh-plugin",
+    "deepseek-harness",
+    "mathematica",
+    "wolfram",
+    "wolfram-language",
+    "notebook",
+    "nb",
+    "cells"
+  ],
+  "homepage": "https://github.com/yhbcode000/mathematica-mcp/tree/main/notebook",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/yhbcode000/mathematica-mcp.git",
+    "directory": "notebook"
+  }
+}

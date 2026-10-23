@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Mathematica Notebook",
+    "description": "Interactive Mathematica notebook in the right sidebar: run Wolfram Language cells beside the chat, typeset output, real .nb files, Open in Mathematica, and agent tools for creating, editing and running notebooks."
+  }
+}

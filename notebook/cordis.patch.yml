@@ -1,0 +1,21 @@
+# dsh-mathematica-notebook — sidebar Mathematica notebook for DeepSeek Harness.
+#
+# One Host row mounts this package's index.js. That Host half owns the notebook
+# store, the persistent Wolfram kernel, the `mathematica_notebook` agent tool and
+# the authenticated RPC channel (/mathematica-notebook) that the browser half
+# calls. The browser half is declared by this package's `dsh.client` manifest and
+# loaded by the DSH client module system, so it needs no row of its own.
+#
+# Row name form: the package specifier. A bundle's patch rows may also use
+# patch-relative paths (for example './index.js'); DSH converts those to file
+# URLs beside this file. The package specifier is preferred because it also
+# gives Plugin Manager the package's locale metadata and icon for this row; if a
+# profile ever fails to resolve the name, replace `name:` with `'./index.js'`
+# (see notebook/README.md → Troubleshooting and docs/notebook-plugin.md).
+#
+# `config: {}` is deliberate: the Host half reads its settings from the normal
+# environment and kernel-discovery files, and an empty config cannot fail boot.
+- insert:
+    - id: dsh-mathematica-notebook
+      name: 'dsh-mathematica-notebook'
+      config: {}

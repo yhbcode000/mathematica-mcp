@@ -208,6 +208,92 @@ and drops `&path:/dsh`, installing the repository root instead of the bundle —
 `plugin_manager`'s market install path (or pass the spec to `pnpm add` directly) for this repo.
 <!-- /EVIDENCE -->
 
+## Notebook plugin (published 0.1.0)
+
+Package: `dsh-mathematica-notebook` 0.1.0.
+
+Release state: **published** as `dsh-mathematica-notebook` 0.1.0 in this repository and the same
+plugin-market index. The checklist below is checked only where the recorded evidence exists; the
+remaining open item is the manual real-browser visual pass.
+
+| Item | Value |
+| --- | --- |
+| DSH bundle package | `dsh-mathematica-notebook` 0.1.0 (bundle directory `notebook/`) |
+| Market entry name (must equal `package.json` name) | `dsh-mathematica-notebook` |
+| Market index | same index URL as above, with a new `plugins[]` entry |
+| Market install spec form | `git+https://github.com/yhbcode000/mathematica-mcp.git#<pinned commit>&path:/notebook` |
+| Repo commit containing `notebook/` | `<filled by the publish task>` |
+| Icon / locale | `notebook/icon.svg`, `notebook/locale/{en,zh}.json` |
+| Maintainer documentation | [`notebook-plugin.md`](notebook-plugin.md) |
+
+### Release checklist (evidence required before `[x]`)
+
+- [ ] Implementation complete: `notebook/index.js` + `notebook/lib/**` + `notebook/client.js` from the
+      implementation tasks, and `node --test` green at the repo root (includes `notebook/test/**`).
+- [ ] Vendored kernel bridge in sync: `node notebook/scripts/sync-kernel.mjs --check` exits 0.
+- [ ] Host half importable without DSH:
+      `node --input-type=module -e "await import('./notebook/index.js')"`.
+- [ ] Bundle installs in a DSH profile (`plugin_manager` `install_bundle`, target `<repo>/notebook`) →
+      `application: "applied"`, no warnings.
+- [ ] Browser half verified in the DSH Web UI with the checklist below.
+- [ ] Agent tool verified: `mathematica_notebook` `create` / `read` / `edit` / `run` against a real
+      kernel, and agent edits become visible in the open tab after the 2 s poll.
+- [ ] `market/index.json` gains the notebook entry (`name` = `dsh-mathematica-notebook`, version
+      `0.1.0`, `source.path` = `notebook`) and passes `node market/validate-index.mjs`.
+- [ ] Repo pushed; commit SHA recorded; market entry pinned to a commit whose tree contains
+      `notebook/**`; index pushed again.
+- [ ] Raw index URL returns 200 with no redirect; shipped-validator parse OK; the pinned commit tree
+      contains `notebook/lib/**`, `notebook/client.js`, `notebook/kernel/**`.
+- [ ] CI workflow source updated for the notebook checks (repo copy **and** `docs/ci-workflow.yml`;
+      CI enforces the two bodies are identical).
+- [ ] User docs' claims match observed behavior: two independent kernels, code-cells-only v1, 2D SVG / 3D PNG output,
+      read-only foreign `.nb` imports.
+
+### Browser verification checklist (manual — this repository has no browser-control harness)
+
+| Check | Expected |
+| --- | --- |
+| Guide entry in the right sidebar | **New Mathematica notebook** opens a tab; localized in `en` and `zh`. |
+| New notebook | File created under `<cwd>/notebooks` (fallback `$DSH_HOME/notebooks`); a valid `.nb` exists on disk. |
+| Run a cell | `2+2` → `4` as text; `Plot[...]` → typeset SVG. |
+| Run a 3D cell | `Plot3D[...]` → PNG image in the cell (not raw `Graphics3D` text). |
+| Persistence | A definition in cell 1 is visible to cell 2; restart clears it. |
+| Save + reopen | Save writes to disk; reopening shows the same cells; revision increments. |
+| Foreign `.nb` import | Read-only when cells cannot all map; **Save As** creates an editable copy. |
+| Open in Mathematica | Launches the external front end; reports `launch_failed` when no front end exists. |
+| `.nb` file link | Opening a `.nb` resource opens it in a notebook tab. |
+| Agent edit visibility | An agent edit appears in the open tab within ~2 s without a manual reload. |
+| Conflict banner | Local dirty edits + external revision → banner offering reload or keep-local. |
+| Owner-only channel | Non-owner requests are refused (403); non-POST is refused (405). |
+
+### Evidence placeholders
+
+<!-- NOTEBOOK EVIDENCE -->
+- N1 — bundle install result: `<pending>`
+- N2 — browser verification: `<pending>`
+- N3 — agent tool calls (`create`/`read`/`edit`/`run`): `<pending>`
+- N4 — repo commit SHA containing `notebook/`: `<pending>`
+- N5 — market pin + validator output: `<pending>`
+- N6 — raw index URL status: `<pending>`
+<!-- /NOTEBOOK EVIDENCE -->
+
+### Local integration evidence (Lead, real DSH profile)
+
+<!-- Filled with the final post-fix evidence block when the release commit is authorized; the
+pre-fix integration run is not published. -->
+`<pending>`
+
+### Known cosmetic notes (record, not release blockers)
+
+- After `plugin_manager` `remove_bundle` of a `link:` install, pnpm can leave a stale
+  `node_modules/dsh-mathematica-notebook` symlink in the profile. It is harmless, removed by the
+  next install/prune, and must not be read as a failed uninstall.
+- Real-browser visual verification: the automated client checks ran through an external
+  fake-React/fake-Host harness over the real `client.js`; the manual checklist above still needs
+  one real-browser pass and stays pending until then.
+- Close-then-debug store entry (memory only): fixed before release — `close` flushes, disposes per-document
+  timers and deletes the store entry (tombstoned so an in-flight auto-save cannot resurrect it).
+
 ## Release procedure (verified on the publication machine)
 
 The publication machine had **no git on PATH**. Two verified paths:

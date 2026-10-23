@@ -12,9 +12,9 @@
 #   git commit -m "Add CI workflow"
 #   git push
 #
-# The workflow itself is validated by this repository's own market/bundle checks
-# and by running its steps locally (node --test, node dsh/scripts/sync-server.mjs
-# --check, node market/validate-index.mjs).
+# The workflow itself is validated by this repository's own checks and by running
+# its steps locally: node --test, node dsh/scripts/sync-server.mjs --check,
+# node notebook/scripts/sync-kernel.mjs --check, node market/validate-index.mjs.
 name: CI
 
 on:
@@ -44,9 +44,12 @@ jobs:
       # The server has no runtime dependencies, so there is nothing to install.
       # Tests that need a Mathematica kernel skip themselves when no kernel is
       # available (this CI has none); see test/ for the detection logic.
+      # The same `node --test` discovery also runs the DSH notebook plugin's tests
+      # under notebook/test/, so both suites must stay portable across the Node
+      # 18/20/22 matrix (the Host plugin itself runs on the DSH runtime).
       # Note: `node --test` (auto-discovery) is used instead of `node --test test/`
       # because Node 24 treats a positional directory as a single test entry.
-      - name: Run server tests
+      - name: Run tests (server + notebook)
         run: node --test
         env:
           CI: 'true'
@@ -176,4 +179,96 @@ jobs:
           check((text.match(/^\s+- !!js/mg) ?? []).length === 1, 'config.args must have exactly one !!js entry')
           if (failures.length) { for (const failure of failures) console.error('FAIL: ' + failure); process.exit(1) }
           console.log('bundle patch structure and guardrails OK')
+          EOF
+
+      - name: Verify the vendored notebook kernel bridge is in sync
+        run: node notebook/scripts/sync-kernel.mjs --check
+
+      - name: Validate notebook package, locales and icon
+        run: |
+          node - <<'EOF'
+          const { readFileSync, existsSync, statSync } = require('node:fs')
+          const failures = []
+          const check = (ok, message) => { if (!ok) failures.push(message) }
+          const readJson = (path) => JSON.parse(readFileSync(path, 'utf8'))
+
+          // Package identity and manifest fields (must match the future market entry name).
+          const notebook = readJson('notebook/package.json')
+          check(notebook.name === 'dsh-mathematica-notebook', 'notebook package name must be dsh-mathematica-notebook')
+          check(notebook.version === '0.1.0', 'notebook package version must be 0.1.0')
+          check(notebook.type === 'module', 'notebook package must be ESM (type: module)')
+          check(Object.keys(notebook.dependencies ?? {}).length === 0, 'notebook package must have zero runtime dependencies')
+          check(notebook.dsh?.bundle?.patch === './cordis.patch.yml', 'notebook must declare dsh.bundle.patch = ./cordis.patch.yml')
+          check(notebook.dsh?.client?.platform === 'web', 'notebook dsh.client.platform must be web')
+          check(notebook.dsh?.client?.immediately === true, 'notebook dsh.client.immediately must be true')
+          const inject = notebook.dsh?.client?.inject ?? []
+          for (const dep of ['@deepseek-ai/dsh-client-connection', '@deepseek-ai/dsh-client-ui-sidebar-right', '@deepseek-ai/dsh-client-locale', '@deepseek-ai/dsh-client-ui-session']) {
+            check(inject.includes(dep), `notebook dsh.client.inject must include ${dep}`)
+          }
+          check(notebook.exports?.['.'] === './index.js', 'notebook must export "." = ./index.js')
+          check(notebook.exports?.['./client'] === './client.js', 'notebook must export "./client" = ./client.js')
+          check(notebook.exports?.['./locale/*.json'] === './locale/*.json', 'notebook must export ./locale/*.json')
+          check(notebook.exports?.['./icon'] === './icon.svg', 'notebook must export ./icon')
+
+          // Files declared in the manifest and mandated by CONTRACT.md §8.
+          for (const file of ['index.js', 'client.js', 'cordis.patch.yml', 'icon.svg', 'README.md', 'CONTRACT.md', 'locale/en.json', 'locale/zh.json', 'kernel/kernel.js', 'kernel/detect.js', 'scripts/sync-kernel.mjs']) {
+            check(existsSync(`notebook/${file}`), `notebook/${file} is missing`)
+          }
+          for (const file of ['lib/rpc.js', 'lib/paths.js', 'lib/kernel-manager.js', 'lib/nb-codec.js', 'lib/store.js', 'lib/tools.js', 'lib/launcher.js']) {
+            check(existsSync(`notebook/${file}`), `notebook/${file} is missing (CONTRACT.md §8 module map)`)
+          }
+
+          // Display metadata must be complete in every locale.
+          for (const locale of ['en', 'zh']) {
+            const text = readJson(`notebook/locale/${locale}.json`)
+            check(typeof text.meta?.title === 'string' && text.meta.title.length > 0, `notebook/locale/${locale}.json meta.title missing`)
+            check(typeof text.meta?.description === 'string' && text.meta.description.length > 0, `notebook/locale/${locale}.json meta.description missing`)
+          }
+          const iconSize = existsSync('notebook/icon.svg') ? statSync('notebook/icon.svg').size : 0
+          check(iconSize > 100 && iconSize <= 256 * 1024, 'notebook/icon.svg must exist and be at most 256 KiB')
+          check(existsSync('notebook/icon.svg') && readFileSync('notebook/icon.svg', 'utf8').includes('<svg'), 'notebook/icon.svg must be SVG')
+
+          if (failures.length) { for (const failure of failures) console.error('FAIL: ' + failure); process.exit(1) }
+          console.log('notebook package manifest, module map, locales and icon OK')
+          EOF
+
+      - name: Validate notebook bundle patch guardrails
+        run: |
+          node - <<'EOF'
+          const { readFileSync } = require('node:fs')
+          const text = readFileSync('notebook/cordis.patch.yml', 'utf8')
+          const failures = []
+          const check = (ok, message) => { if (!ok) failures.push(message) }
+          check(/^- insert:/m.test(text), 'notebook patch must contain a top-level insert list')
+          check(/^\s+- id: dsh-mathematica-notebook$/m.test(text), 'notebook patch row id must be dsh-mathematica-notebook')
+          check(/^\s+name: '?(?:dsh-mathematica-notebook|\.\/index\.js)'?$/m.test(text), 'notebook patch row name must be the package name (preferred) or ./index.js (fallback)')
+          check(/^\s+config: \{\}$/m.test(text), 'notebook patch row must keep config: {} (no schema-failing config)')
+          if (failures.length) { for (const failure of failures) console.error('FAIL: ' + failure); process.exit(1) }
+          console.log('notebook bundle patch guardrails OK')
+          EOF
+
+      - name: Load the notebook Host half (syntax and relative imports)
+        # The Host half must be importable without a DSH process: modules attach no
+        # side effects at import time (CONTRACT.md §8), so this catches syntax and
+        # relative-import defects the unit tests may not touch.
+        run: node --input-type=module -e "await import('./notebook/index.js')"
+
+      - name: Verify workflow source copies are consistent
+        run: |
+          node - <<'EOF'
+          const { readFileSync } = require('node:fs')
+          const bodyOf = (path) => {
+            const text = readFileSync(path, 'utf8').replace(/\r\n/g, '\n')
+            const index = text.indexOf('name: CI')
+            if (index < 0) throw new Error(`${path}: missing "name: CI"`)
+            return text.slice(index).trim()
+          }
+          // The publication credential cannot push .github/workflows/**, so the
+          // runnable workflow is also shipped as docs/ci-workflow.yml; the two
+          // must stay identical from `name: CI` onward.
+          if (bodyOf('.github/workflows/ci.yml') !== bodyOf('docs/ci-workflow.yml')) {
+            console.error('docs/ci-workflow.yml must mirror .github/workflows/ci.yml')
+            process.exit(1)
+          }
+          console.log('workflow copies are consistent')
           EOF

@@ -70,6 +70,12 @@ export function wlStringLiteral(value) {
   return `${out}"`;
 }
 
+function normalizeArtifactPath(value) {
+  if (typeof value !== 'string') return null;
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : null;
+}
+
 /**
  * Build the single WL expression evaluated for one call.
  *
@@ -80,14 +86,22 @@ export function wlStringLiteral(value) {
  * instead of blocking on an unterminated top level expression.
  * `Last[{...}]` normalises a top-level `Sequence` result and guarantees that the
  * frame writer always receives a single expression to stringify.
+ *
+ * When `options.artifactPath` is set, the wrapper additionally exports the
+ * evaluation result to that file (format inferred by the extension, e.g. .svg /
+ * .png) with a 15s TimeConstrained budget and reports the written path through an
+ * extra `@@MM:ARTIFACT:<id>@@<path|->` frame between the MSGS frame and END.
+ * Without `artifactPath` the produced wrapper (and therefore the protocol output)
+ * is byte-identical to the plain evaluation wrapper.
  */
-export function buildWrapper(id, code, timeoutSeconds = DEFAULT_TIMEOUT_SECONDS) {
+export function buildWrapper(id, code, timeoutSeconds = DEFAULT_TIMEOUT_SECONDS, options = {}) {
   const timeout = normalizeTimeoutSeconds(timeoutSeconds);
   const literal = wlStringLiteral(code);
+  const artifactPath = normalizeArtifactPath(options.artifactPath);
   const resultPrefix = `\\n@@MM:RESULT:${id}@@`;
   const messagesPrefix = `@@MM:MSGS:${id}@@`;
-  return [
-    `Block[{$MessageList = {}, mathematica$mcp$res, mathematica$mcp$msgs, mathematica$mcp$out = $Output, mathematica$mcp$code = ${literal}, mathematica$mcp$str},`,
+  const lines = [
+    `Block[{$MessageList = {}, mathematica$mcp$res, mathematica$mcp$msgs${artifactPath ? ', mathematica$mcp$art' : ''}, mathematica$mcp$out = $Output, mathematica$mcp$code = ${literal}, mathematica$mcp$str},`,
     `WriteString[mathematica$mcp$out, "@@MM:BEGIN:${id}@@\\n"];`,
     `mathematica$mcp$res = TimeConstrained[Last[{ToExpression[mathematica$mcp$code, InputForm]}], ${formatWlNumber(timeout)}, $Aborted];`,
     `mathematica$mcp$msgs = $MessageList;`,
@@ -95,9 +109,25 @@ export function buildWrapper(id, code, timeoutSeconds = DEFAULT_TIMEOUT_SECONDS)
     `WriteString[mathematica$mcp$out, "${resultPrefix}" <> ToString[StringLength[mathematica$mcp$str]] <> ":" <> mathematica$mcp$str <> "\\n"];`,
     `mathematica$mcp$str = ToString[mathematica$mcp$msgs, InputForm];`,
     `WriteString[mathematica$mcp$out, "${messagesPrefix}" <> ToString[StringLength[mathematica$mcp$str]] <> ":" <> mathematica$mcp$str <> "\\n"];`,
-    `WriteString[mathematica$mcp$out, "@@MM:END:${id}@@\\n"]`,
-    ']',
-  ].join('\n');
+  ];
+  if (artifactPath) {
+    const artifactLiteral = wlStringLiteral(artifactPath);
+    // Quiet[Check[...]] keeps diagnostics out of the user output and degrades to
+    // "-" (no artifact) when the export fails, times out or writes no file. Only
+    // real results are exported: $Aborted / $Failed never produce an artifact.
+    lines.push(
+      `mathematica$mcp$str = ${artifactLiteral};`,
+      'If[MatchQ[mathematica$mcp$res, $Aborted | $Failed],',
+      '  mathematica$mcp$art = "-",',
+      '  mathematica$mcp$art = Quiet[Check[',
+      '    If[TimeConstrained[Export[mathematica$mcp$str, mathematica$mcp$res], 15, $Aborted] === $Aborted || !TrueQ[FileExistsQ[mathematica$mcp$str]], "-", mathematica$mcp$str],',
+      '    "-"]]',
+      '];',
+      `WriteString[mathematica$mcp$out, "@@MM:ARTIFACT:${id}@@" <> mathematica$mcp$art <> "\\n"];`,
+    );
+  }
+  lines.push(`WriteString[mathematica$mcp$out, "@@MM:END:${id}@@\\n"]`, ']');
+  return lines.join('\n');
 }
 
 function formatWlNumber(value) {
@@ -132,6 +162,7 @@ export function parseFrame(buffer, id) {
   const beginToken = `@@MM:BEGIN:${id}@@`;
   const resultToken = `@@MM:RESULT:${id}@@`;
   const messagesToken = `@@MM:MSGS:${id}@@`;
+  const artifactToken = `@@MM:ARTIFACT:${id}@@`;
   const endToken = `@@MM:END:${id}@@`;
 
   const endIndex = buffer.indexOf(endToken);
@@ -170,6 +201,22 @@ export function parseFrame(buffer, id) {
   const messages = takeCodePoints(buffer, position, Number(messagesLength[1]));
   position = messages.endIndex;
 
+  // Optional artifact frame (only emitted when the caller requested an artifact
+  // export): `@@MM:ARTIFACT:<id>@@<path or ->` between MSGS and END.
+  let artifactRaw = null;
+  if (position < endIndex) {
+    let scan = position;
+    if (buffer.startsWith('\r\n', scan)) scan += 2;
+    else if (buffer[scan] === '\n') scan += 1;
+    if (buffer.startsWith(artifactToken, scan)) {
+      const lineEnd = buffer.indexOf('\n', scan + artifactToken.length);
+      if (lineEnd === -1 || lineEnd > endIndex) {
+        throw new KernelError('Protocol error: malformed artifact frame.', { code: 'protocol_error' });
+      }
+      artifactRaw = buffer.slice(scan + artifactToken.length, lineEnd).replace(/\r$/, '');
+    }
+  }
+
   let consumed = endIndex + endToken.length;
   if (buffer[consumed] === '\r') consumed += 1;
   if (buffer[consumed] === '\n') consumed += 1;
@@ -178,6 +225,7 @@ export function parseFrame(buffer, id) {
     outputRaw,
     resultInputform: result.text,
     messagesInputform: messages.text,
+    artifactRaw,
     consumed,
   };
 }
@@ -640,24 +688,33 @@ export class KernelBridge {
   /**
    * Evaluate Wolfram Language code and return a structured payload.
    *
+   * @param {string} code Wolfram Language source.
+   * @param {object} [options]
+   * @param {number} [options.timeoutSeconds]
+   * @param {string} [options.label] Diagnostic label.
+   * @param {string|null} [options.artifactPath] When set (absolute .svg / .png
+   *   temp path), the evaluation result is exported to that file and reported as
+   *   `payload.artifactPath` (string on success, `null` on any failure). When
+   *   omitted, no artifact frame is emitted and the payload is unchanged.
    * @returns {Promise<{isError: boolean, payload: object}>}
    */
-  evaluate(code, { timeoutSeconds = DEFAULT_TIMEOUT_SECONDS, label = 'evaluate' } = {}) {
+  evaluate(code, { timeoutSeconds = DEFAULT_TIMEOUT_SECONDS, label = 'evaluate', artifactPath = null } = {}) {
     if (typeof code !== 'string') {
       return Promise.reject(new KernelError('"code" must be a string of Wolfram Language code.', { code: 'invalid_code' }));
     }
+    const artifact = normalizeArtifactPath(artifactPath);
     return this._enqueue(async () => {
       await this.ensureReady();
       const timeout = normalizeTimeoutSeconds(timeoutSeconds);
       const id = `c${randomBytes(8).toString('hex')}`;
       const started = Date.now();
-      const frame = await this._call(label, buildWrapper(id, code, timeout), id, timeout);
+      const frame = await this._call(label, buildWrapper(id, code, timeout, { artifactPath: artifact }), id, timeout);
       this._calls += 1;
-      return this._buildResultPayload(frame, { timeoutSeconds: timeout, durationMs: Date.now() - started });
+      return this._buildResultPayload(frame, { timeoutSeconds: timeout, durationMs: Date.now() - started, artifactPath: artifact });
     });
   }
 
-  _buildResultPayload(frame, { timeoutSeconds, durationMs }) {
+  _buildResultPayload(frame, { timeoutSeconds, durationMs, artifactPath = null }) {
     const outputRaw = truncateText(frame.outputRaw || '', MAX_OUTPUT_CHARS);
     const output = decodeBatchOutput(outputRaw);
     const messagesInputformRaw = frame.messagesInputform || '';
@@ -673,6 +730,10 @@ export class KernelBridge {
       result_inputform: resultInputform,
       output,
     };
+    if (artifactPath) {
+      payload.artifactPath =
+        typeof frame.artifactRaw === 'string' && frame.artifactRaw.length > 1 && frame.artifactRaw !== '-' ? frame.artifactRaw : null;
+    }
     if (messages.length) payload.messages = messages;
     if (messagesInputformRaw.trim() && messagesInputformRaw.trim() !== '{}') {
       payload.messages_inputform = truncateText(messagesInputformRaw, 16_000);

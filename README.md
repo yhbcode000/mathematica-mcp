@@ -28,9 +28,10 @@ mathematica-mcp/
 ├── src/kernel.js              # kernel process bridge: queue, framing, timeouts, restart
 ├── src/detect.js              # kernel discovery + license/health probe
 ├── test/                      # node:test suite (skips kernel tests when no kernel is installed)
-├── dsh/                       # companion DeepSeek Harness plugin bundle (vendors this server)
-├── market/                    # DSH plugin-market index for this bundle
-└── docs/                      # client setup, DSH install, architecture, publishing notes
+├── dsh/                       # DSH plugin bundle: MCP tools (vendors this server)
+├── notebook/                  # DSH plugin: interactive sidebar notebook (Host + browser halves)
+├── market/                    # DSH plugin-market index for these bundles
+└── docs/                      # client setup, DSH install, notebook maintainers, publishing notes
 ```
 
 ## Prior art (read this first)
@@ -53,7 +54,10 @@ What this project adds, factually:
 - **persistent kernel state** across tool calls, with a bridge-level timeout/restart/watchdog;
 - **graphics and data export** (png, svg, pdf, csv, txt, json, tex) as a first-class tool;
 - an optional **DeepSeek Harness plugin bundle + plugin-market index** in [`dsh/`](dsh/) and
-  [`market/`](market/), which vendors the same server.
+  [`market/`](market/), which vendors the same server;
+- a DeepSeek Harness **sidebar notebook plugin** in [`notebook/`](notebook/): an interactive Wolfram
+  notebook with code cells, typeset output, real `.nb` files and agent edits — with its own kernel
+  process (see the [two-kernel note](#sidebar-notebook-plugin-deepseek-harness)).
 
 These projects are independent; this one is not affiliated with them.
 
@@ -205,6 +209,35 @@ From the plugin market (requires `git` on `PATH`), add the raw index URL
 Full install and manual `cordis.patch.yml` instructions:
 [`dsh/README.md`](dsh/README.md) and [`docs/dsh-install.md`](docs/dsh-install.md).
 Design notes: [`docs/architecture.md`](docs/architecture.md).
+
+## Sidebar notebook plugin (DeepSeek Harness)
+
+This repository also ships a **separate DSH plugin** in [`notebook/`](notebook/):
+`dsh-mathematica-notebook` — an interactive Mathematica notebook docked in the DSH right sidebar,
+next to the chat. It is independent of the MCP server above; install either or both.
+
+| Feature | Detail |
+| --- | --- |
+| Sidebar notebook tab | Open from the right-sidebar guide (**New Mathematica notebook**) or by opening any `*.nb` file; multiple notebook tabs are supported. |
+| Code cells + rich output | Run Wolfram Language cells; results render as text, typeset SVG (2D plots, formulas, tables) or a PNG image (3D graphics and raster images). |
+| Real `.nb` files | New notebooks are written immediately as valid Wolfram notebooks; saves are revision-checked so a tab and the agent cannot silently overwrite each other. |
+| Agent tool `mathematica_notebook` | List/create/read/edit/run notebooks in the same store the tab uses, e.g. *"在 notebook 里加一节，导出这张图的 CSV"*. |
+| Open in Mathematica | Hands the current `.nb` to your installed Mathematica front end (external window). |
+| v1 limits | Code cells only; imported foreign `.nb` files are read-only (Save As allowed); outputs are not written back into the `.nb`. |
+
+Requirements are the same as the MCP server: a locally licensed Mathematica or the free Wolfram
+Engine. Install it with `plugin_manager` `install_bundle` pointing at `<checkout>/notebook`, or from
+the same plugin-market index once released. Keep the vendored kernel bridge current with
+`node notebook/scripts/sync-kernel.mjs`.
+
+**Two kernels, not one.** The notebook plugin starts and owns **its own** Wolfram kernel, separate
+from the kernel running inside the `mcp__mathematica__*` MCP server process. Definitions and state do
+not cross between them; each runs, times out and restarts independently, and each uses its own kernel
+process memory and license seat. Move data between the two through files.
+
+Full user guide: [`notebook/README.md`](notebook/README.md). Maintainer notes (RPC channel, `.nb`
+codec, revision model, native launcher, security, roadmap):
+[`docs/notebook-plugin.md`](docs/notebook-plugin.md).
 
 ## Tool reference
 
@@ -427,10 +460,20 @@ node --test
 
 The suite includes protocol/JSON-RPC checks, unit tests for kernel detection, and integration tests
 against a real Mathematica kernel. **Kernel integration tests are skipped automatically when no kernel
-is installed**, so the suite is green on CI machines without Mathematica:
+is installed**, so the suite is green on CI machines without Mathematica. The same `node --test`
+auto-discovery also runs the DSH notebook plugin's tests (under `notebook/test/` once the
+implementation lands).
+
+Vendored copies must stay current (CI checks both):
 
 ```bash
-# Force-skip kernel tests (e.g. in CI):
+node dsh/scripts/sync-server.mjs --check
+node notebook/scripts/sync-kernel.mjs --check
+```
+
+Force-skip kernel tests (for example in CI):
+
+```bash
 MATHEMATICA_MCP_TEST_SKIP_KERNEL=1 npm test
 ```
 
@@ -455,5 +498,5 @@ Wolfram Engine** — this project does not include, redistribute or sublicense W
 Wolfram, Mathematica, Wolfram Language and Wolfram Engine are trademarks of Wolfram Research, Inc.
 This project is not affiliated with or endorsed by Wolfram Research.
 
-DeepSeek Harness and DSH are part of the DeepSeek Harness project; this project's `dsh/` bundle is a
-community integration.
+DeepSeek Harness and DSH are part of the DeepSeek Harness project; this project's `dsh/` and
+`notebook/` plugins are community integrations.

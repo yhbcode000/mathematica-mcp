@@ -11,13 +11,15 @@
 import assert from 'node:assert/strict';
 import { after, before, test } from 'node:test';
 import { existsSync } from 'node:fs';
-import { readFile, rm } from 'node:fs/promises';
+import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 
 import { McpTestClient, kernelSkipReason, resolveTestKernel, toolPayload } from './mcp-client.mjs';
+import { KernelBridge, buildWrapper, parseFrame } from '../src/kernel.js';
 
 const kernelPath = await resolveTestKernel();
+const ARTIFACT_DIR = join(tmpdir(), 'mathematica-mcp-artifact-tests');
 
 /**
  * Register a kernel test, or a skipped placeholder when no kernel is available
@@ -33,6 +35,27 @@ function kernelTest(name, options, fn) {
 
 let client = null;
 const createdFiles = [];
+
+/** Lazily started direct KernelBridge instance used by the artifact tests. */
+let artifactBridge = null;
+
+async function getArtifactBridge() {
+  if (!artifactBridge) {
+    artifactBridge = new KernelBridge({
+      kernelPath,
+      logger: (message) => process.stderr.write(`[kernel-bridge-test] ${message}\n`),
+    });
+    await artifactBridge.ensureReady();
+  }
+  return artifactBridge;
+}
+
+async function artifactTarget(extension) {
+  await mkdir(ARTIFACT_DIR, { recursive: true });
+  const target = join(ARTIFACT_DIR, `artifact-${Date.now()}-${Math.random().toString(16).slice(2)}.${extension}`);
+  createdFiles.push(target);
+  return target;
+}
 
 async function call(name, args, options) {
   const response = await client.callTool(name, args, options);
@@ -51,6 +74,13 @@ before(async () => {
 });
 
 after(async () => {
+  if (artifactBridge) {
+    try {
+      await artifactBridge.shutdown();
+    } catch {
+      /* ignore cleanup errors */
+    }
+  }
   if (client) await client.close();
   for (const file of createdFiles) {
     try {
@@ -58,6 +88,11 @@ after(async () => {
     } catch {
       /* ignore cleanup errors */
     }
+  }
+  try {
+    await rm(ARTIFACT_DIR, { recursive: true, force: true });
+  } catch {
+    /* ignore cleanup errors */
   }
 });
 
@@ -253,4 +288,122 @@ kernelTest('server stdout stayed protocol-clean during the whole kernel session'
   for (const line of client.stdoutLines) {
     assert.doesNotThrow(() => JSON.parse(line));
   }
+});
+
+// ---------------------------------------------------------------------------
+// KernelBridge artifact export (optional `artifactPath` option). Used by the
+// dsh-mathematica-notebook Host to render rich results as SVG/PNG.
+// ---------------------------------------------------------------------------
+
+test('buildWrapper only emits the artifact frame when artifactPath is requested', () => {
+  const plain = buildWrapper('plain-id', '2+2', 60);
+  assert.ok(!plain.includes('@@MM:ARTIFACT:'));
+  assert.ok(!plain.includes('mathematica$mcp$art'));
+  assert.ok(plain.includes('@@MM:MSGS:plain-id@@'));
+  assert.ok(plain.indexOf('@@MM:MSGS:plain-id@@') < plain.indexOf('@@MM:END:plain-id@@'));
+
+  const withArtifact = buildWrapper('art-id', '2+2', 60, { artifactPath: 'C:/tmp/artifact.svg' });
+  assert.ok(withArtifact.includes('mathematica$mcp$art'));
+  assert.ok(withArtifact.includes('C:/tmp/artifact.svg'));
+  assert.ok(withArtifact.indexOf('@@MM:MSGS:art-id@@') < withArtifact.indexOf('@@MM:ARTIFACT:art-id@@'));
+  assert.ok(withArtifact.indexOf('@@MM:ARTIFACT:art-id@@') < withArtifact.indexOf('@@MM:END:art-id@@'));
+});
+
+test('parseFrame reads optional artifact frames and stays compatible without one', () => {
+  const makeFrame = (id, artifactLine) =>
+    `@@MM:BEGIN:${id}@@\r\n\r\n@@MM:RESULT:${id}@@1:4\r\n@@MM:MSGS:${id}@@2:{}\r\n${artifactLine}@@MM:END:${id}@@\r\n`;
+
+  const plain = parseFrame(makeFrame('f1', ''), 'f1');
+  assert.equal(plain.resultInputform, '4');
+  assert.equal(plain.artifactRaw, null);
+
+  const withArtifact = parseFrame(makeFrame('f2', '@@MM:ARTIFACT:f2@@C:\\tmp\\out.svg\r\n'), 'f2');
+  assert.equal(withArtifact.resultInputform, '4');
+  assert.equal(withArtifact.artifactRaw, 'C:\\tmp\\out.svg');
+
+  const missing = parseFrame(makeFrame('f3', '@@MM:ARTIFACT:f3@@-\r\n'), 'f3');
+  assert.equal(missing.artifactRaw, '-');
+});
+
+kernelTest('artifact export: Plot[...] to .svg is reported and the file starts with <?xml', { timeout: 300_000 }, async () => {
+  const bridge = await getArtifactBridge();
+  const target = await artifactTarget('svg');
+  const outcome = await bridge.evaluate('Plot[Sin[x], {x, 0, 6.28}]', { artifactPath: target });
+  assert.equal(outcome.isError, false);
+  assert.equal(outcome.payload.ok, true);
+  assert.equal(outcome.payload.artifactPath, target);
+  assert.ok(existsSync(target), 'expected the SVG artifact to exist');
+  const content = await readFile(target, 'utf8');
+  assert.ok(content.startsWith('<?xml'), `expected SVG XML, got: ${content.slice(0, 80)}`);
+  assert.match(content, /<svg/);
+});
+
+kernelTest('artifact export: symbolic Integrate[x^2, x] to .svg works', { timeout: 180_000 }, async () => {
+  const bridge = await getArtifactBridge();
+  const target = await artifactTarget('svg');
+  const outcome = await bridge.evaluate('Integrate[x^2, x]', { artifactPath: target });
+  assert.equal(outcome.isError, false);
+  assert.equal(outcome.payload.artifactPath, target);
+  const content = await readFile(target, 'utf8');
+  assert.ok(content.startsWith('<?xml'), `expected SVG XML, got: ${content.slice(0, 80)}`);
+  assert.match(content, /<svg/);
+});
+
+kernelTest('artifact export: Plot[...] to .png writes a real PNG', { timeout: 180_000 }, async () => {
+  const bridge = await getArtifactBridge();
+  const target = await artifactTarget('png');
+  const outcome = await bridge.evaluate('Plot[Cos[x], {x, 0, 6.28}]', { artifactPath: target });
+  assert.equal(outcome.isError, false);
+  assert.equal(outcome.payload.artifactPath, target);
+  const bytes = await readFile(target);
+  assert.ok(bytes.length > 1000, `expected PNG > 1000 bytes, got ${bytes.length}`);
+  assert.deepEqual([...bytes.subarray(0, 4)], [0x89, 0x50, 0x4e, 0x47]);
+});
+
+kernelTest('artifact export: timeout produces no artifact and the kernel stays usable', { timeout: 180_000 }, async () => {
+  const bridge = await getArtifactBridge();
+  const target = await artifactTarget('svg');
+  const outcome = await bridge.evaluate('While[True, 1]', { timeoutSeconds: 2, artifactPath: target });
+  assert.equal(outcome.isError, true);
+  assert.equal(outcome.payload.error, 'timeout');
+  assert.equal(outcome.payload.artifactPath, null);
+  assert.equal(existsSync(target), false, 'timed-out evaluation must not produce an artifact');
+
+  const usable = await bridge.evaluate('2+2');
+  assert.equal(usable.isError, false);
+  assert.equal(usable.payload.result, 4);
+});
+
+kernelTest('artifact export: syntax failure produces no artifact', { timeout: 180_000 }, async () => {
+  const bridge = await getArtifactBridge();
+  const target = await artifactTarget('svg');
+  const outcome = await bridge.evaluate('1 +', { artifactPath: target });
+  assert.equal(outcome.isError, true);
+  assert.equal(outcome.payload.error, 'evaluation_failed');
+  assert.equal(outcome.payload.artifactPath, null);
+  assert.equal(existsSync(target), false);
+});
+
+kernelTest('artifact export failure does not fail the evaluation', { timeout: 180_000 }, async () => {
+  const bridge = await getArtifactBridge();
+  await mkdir(ARTIFACT_DIR, { recursive: true });
+  const blocker = join(ARTIFACT_DIR, `blocker-${Date.now()}.txt`);
+  await writeFile(blocker, 'not a directory');
+  createdFiles.push(blocker);
+  // A path below a regular file cannot be written: Export fails, Check/Quiet
+  // degrade to "-" and the evaluation result must still be returned.
+  const unwritable = join(blocker, 'nested', 'out.svg');
+  const outcome = await bridge.evaluate('6*7', { artifactPath: unwritable });
+  assert.equal(outcome.isError, false);
+  assert.equal(outcome.payload.ok, true);
+  assert.equal(outcome.payload.result, 42);
+  assert.equal(outcome.payload.artifactPath, null);
+});
+
+kernelTest('evaluate without artifactPath keeps the payload shape unchanged', { timeout: 180_000 }, async () => {
+  const bridge = await getArtifactBridge();
+  const outcome = await bridge.evaluate('2+2');
+  assert.equal(outcome.isError, false);
+  assert.equal(outcome.payload.result, 4);
+  assert.equal(Object.prototype.hasOwnProperty.call(outcome.payload, 'artifactPath'), false);
 });
