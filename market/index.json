@@ -1,0 +1,81 @@
+{
+  "format": 1,
+  "title": {
+    "en": "Mathematica MCP",
+    "zh": "Mathematica MCP 插件索引"
+  },
+  "description": {
+    "en": "DSH plugin index for local Mathematica / Wolfram Engine tooling: evaluate Wolfram Language, export graphics and data files, and inspect a persistent kernel.",
+    "zh": "面向本地 Mathematica / Wolfram Engine 的 DSH 插件索引：评估 Wolfram 语言、导出图形与数据文件、查看持久内核状态。"
+  },
+  "metadata": {
+    "categories": {
+      "integration": {
+        "title": {
+          "en": "Integrations",
+          "zh": "集成"
+        }
+      }
+    },
+    "labels": {
+      "computer-algebra": {
+        "title": {
+          "en": "Computer algebra",
+          "zh": "计算机代数"
+        }
+      }
+    }
+  },
+  "plugins": [
+    {
+      "name": "dsh-mathematica-mcp",
+      "title": {
+        "en": "Mathematica MCP",
+        "zh": "Mathematica MCP"
+      },
+      "description": {
+        "en": "Connect a locally licensed Mathematica or Wolfram Engine kernel to DSH. Gives the agent mcp__mathematica__* tools: persistent-kernel Wolfram Language evaluation, graphics/data export to png/svg/pdf/csv/txt/json/tex, kernel status/restart/interrupt, and symbol information.",
+        "zh": "将本地已授权的 Mathematica 或 Wolfram Engine 内核接入 DSH，提供 mcp__mathematica__* 工具：持久内核的 Wolfram 语言求值、图形/数据导出（png/svg/pdf/csv/txt/json/tex）、内核状态/重启/中断、符号信息查询。"
+      },
+      "author": "yhbcode000",
+      "homepage": "https://github.com/yhbcode000/mathematica-mcp",
+      "repository": {
+        "url": "https://github.com/yhbcode000/mathematica-mcp",
+        "directory": "dsh"
+      },
+      "icon": "https://raw.githubusercontent.com/yhbcode000/mathematica-mcp/main/dsh/icon.svg",
+      "metadata": {
+        "category": "integration",
+        "labels": [
+          "computer-algebra"
+        ],
+        "keywords": [
+          "mathematica",
+          "wolfram",
+          "wolfram-language",
+          "wolfram-engine",
+          "mcp",
+          "computer-algebra",
+          "symbolic-math",
+          "plot",
+          "export"
+        ]
+      },
+      "versions": [
+        {
+          "version": "0.1.0",
+          "publishTimestamp": 1792785323,
+          "source": {
+            "type": "git",
+            "url": "https://github.com/yhbcode000/mathematica-mcp",
+            "commit": "e1015b845e5583ef28e3e821d374a68d39abcc39",
+            "path": "dsh"
+          },
+          "engines": {
+            "dsh": ">=0.2.0"
+          }
+        }
+      ]
+    }
+  ]
+}
