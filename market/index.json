@@ -97,8 +97,8 @@
         "zh": "Mathematica 笔记本"
       },
       "description": {
-        "en": "Interactive Mathematica notebook in the DSH right sidebar: run Wolfram Language cells beside the chat, typeset SVG for 2D/symbolic output and PNG for 3D graphics, edit real .nb files with revision-safe saves, open them in Mathematica, and let the agent create, edit and run notebooks through the mathematica_notebook tool. Uses its own local Wolfram kernel, separate from the mcp__mathematica__* tool kernel.",
-        "zh": "在 DSH 右侧边栏中使用的交互式 Mathematica 笔记本：在对话旁运行 Wolfram 语言单元格，二维/符号结果以 SVG 排版显示、三维图形以 PNG 显示，编辑真实 .nb 文件并保证保存时版本安全，可用 Mathematica 打开，并允许智能体通过 mathematica_notebook 工具创建、编辑和运行笔记本。使用独立的本地 Wolfram 内核（与 mcp__mathematica__* 工具内核相互独立）。"
+        "en": "Interactive Mathematica notebook in the DSH right sidebar: run Wolfram Language cells beside the chat, typeset SVG for 2D/symbolic output and PNG for 3D graphics, edit real .nb files with revision-safe saves, open them in Mathematica, and let the agent create, edit and run notebooks through the mathematica_notebook tool. The Web notebook button additionally starts a local WLJS Notebook frontend (AGPLv3, runs on the same local Wolfram kernel) inside a sidebar Browser tab, so dynamic output such as Manipulate, Dataset, interactive 3D and Markdown/HTML/JS cells renders exactly as in a real notebook. Uses its own local Wolfram kernel, separate from the mcp__mathematica__* tool kernel.",
+        "zh": "在 DSH 右侧边栏中使用的交互式 Mathematica 笔记本：在对话旁运行 Wolfram 语言单元格，二维/符号结果以 SVG 排版显示、三维图形以 PNG 显示，编辑真实 .nb 文件并保证保存时版本安全，可用 Mathematica 打开，并允许智能体通过 mathematica_notebook 工具创建、编辑和运行笔记本。新增的“网页笔记本”按钮还会在侧边栏浏览器标签中启动本地 WLJS Notebook 前端（AGPLv3，使用同一个本地 Wolfram 内核），从而正确渲染 Manipulate、Dataset、可交互三维图形以及 Markdown/HTML/JS 单元格等动态输出。使用独立的本地 Wolfram 内核（与 mcp__mathematica__* 工具内核相互独立）。"
       },
       "author": "yhbcode000",
       "homepage": "https://github.com/yhbcode000/mathematica-mcp",
@@ -131,6 +131,19 @@
             "type": "git",
             "url": "https://github.com/yhbcode000/mathematica-mcp",
             "commit": "94091e41e1425c6074779f9c7b30a0351705d569",
+            "path": "notebook"
+          },
+          "engines": {
+            "dsh": ">=0.2.0"
+          }
+        },
+        {
+          "version": "0.2.1",
+          "publishTimestamp": 1792799634,
+          "source": {
+            "type": "git",
+            "url": "https://github.com/yhbcode000/mathematica-mcp",
+            "commit": "a7f1ec988cdfbe703b1b3ba57566fb2a1b7623c3",
             "path": "notebook"
           },
           "engines": {
