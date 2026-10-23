@@ -1,0 +1,49 @@
+# dsh-mathematica-mcp — connect a local Mathematica kernel to DeepSeek Harness.
+#
+# One row inserts the shipped MCP client bridge (@deepseek-ai/dsh-mcp-client) for
+# the zero-dependency stdio server bundled in this package's server/ directory
+# (a vendored copy of mathematica-mcp: bin/ + src/). Tools appear to the agent as
+# mcp__mathematica__<tool>.
+#
+# Launch strategy (verified on the DSH Desktop runtime):
+#   * command: the running DSH process's own executable. DSH Desktop is Electron,
+#     so ELECTRON_RUN_AS_NODE=1 makes it start as plain Node (v24.x here); a
+#     plain-Node DSH (npm/npx launch) ignores that variable and runs node directly.
+#   * args[0]: the installed copy of the server entry, resolved from ctx.baseUrl,
+#     which dsh-app-boot anchors at the profile directory
+#     ($DSH_PROFILE_DIR/). The bundle is installed at
+#     <profile>/node_modules/dsh-mathematica-mcp/.
+#   * cwd: the installed bundle root.
+# Both the executable and the server entry can be overridden without editing
+# this file: set MATHEMATICA_MCP_NODE and/or MATHEMATICA_MCP_SERVER_ENTRY in the
+# environment (or in $DSH_HOME/.env) and reload the plugin.
+#
+# failOnStartupError is false so a machine without a resolvable server or kernel
+# keeps booting DSH; the entry then stays inactive and the reason is logged.
+- insert:
+    - id: mcp-mathematica
+      name: '@deepseek-ai/dsh-mcp-client'
+      config:
+        serverName: mathematica
+        transport: stdio
+        command: !!js process.env.MATHEMATICA_MCP_NODE || process.execPath
+        args:
+          - !!js >-
+              (() => {
+                const fromEnvironment = process.env.MATHEMATICA_MCP_SERVER_ENTRY;
+                if (fromEnvironment) return fromEnvironment;
+                const url = new URL(
+                  'node_modules/dsh-mathematica-mcp/server/bin/mathematica-mcp.js',
+                  ctx.baseUrl,
+                );
+                return decodeURIComponent(url.pathname).replace(/^\/([A-Za-z]:)/, '$1');
+              })()
+        cwd: !!js >-
+          (() => {
+            const url = new URL('node_modules/dsh-mathematica-mcp/', ctx.baseUrl);
+            return decodeURIComponent(url.pathname).replace(/^\/([A-Za-z]:)/, '$1');
+          })()
+        env:
+          ELECTRON_RUN_AS_NODE: '1'
+        failOnStartupError: false
+        toolCallTimeoutMs: 180000

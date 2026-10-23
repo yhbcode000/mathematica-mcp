@@ -1,0 +1,41 @@
+{
+  "name": "dsh-mathematica-mcp",
+  "version": "0.1.0",
+  "description": "DeepSeek Harness plugin bundle that connects your locally licensed Mathematica or Wolfram Engine kernel to DSH as MCP tools: evaluate Wolfram Language, export graphics and data files, and inspect a persistent kernel.",
+  "type": "module",
+  "license": "MIT",
+  "author": "yhbcode000",
+  "keywords": [
+    "dsh",
+    "dsh-plugin",
+    "deepseek-harness",
+    "mcp",
+    "model-context-protocol",
+    "mathematica",
+    "wolfram",
+    "wolfram-language"
+  ],
+  "homepage": "https://github.com/yhbcode000/mathematica-mcp/tree/main/dsh",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/yhbcode000/mathematica-mcp.git",
+    "directory": "dsh"
+  },
+  "exports": {
+    "./locale/*.json": "./locale/*.json",
+    "./icon": "./icon.svg",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "cordis.patch.yml",
+    "locale/*.json",
+    "icon.svg",
+    "server/**",
+    "README.md"
+  ],
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  }
+}

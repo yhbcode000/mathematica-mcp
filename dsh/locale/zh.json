@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Mathematica MCP",
+    "description": "将本地已授权的 Mathematica 或 Wolfram Engine 内核接入智能体，提供评估 Wolfram 语言、导出图形与数据文件、查看持久内核状态的 MCP 工具。"
+  }
+}

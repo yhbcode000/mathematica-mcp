@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Mathematica MCP",
+    "description": "Connect your locally licensed Mathematica or Wolfram Engine kernel to the agent as MCP tools: evaluate Wolfram Language, export graphics and data files, and inspect a persistent kernel."
+  }
+}
