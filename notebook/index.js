@@ -21,7 +21,6 @@ import { NotebookPaths } from './lib/paths.js';
 import { RPC_CHANNEL, createDispatcher, mountRpcRoute } from './lib/rpc.js';
 import { NotebookStore } from './lib/store.js';
 import { createNotebookTool } from './lib/tools.js';
-import { WebNotebook } from './lib/web-notebook.js';
 
 export const name = 'dsh-mathematica-notebook';
 
@@ -79,35 +78,11 @@ function createDiagnostics(state) {
 }
 
 /**
- * Resolve the WLJS web-notebook settings from the plugin config and the
- * environment (a headless or differently-laid-out machine can point at any
- * extracted WLJS tree without a rebuild).
- *
- * @param {object} config plugin config
- * @returns {object} `webNotebook` config for `lib/web-notebook.js`
- */
-export function decideWebNotebookConfig(config = {}) {
-  const section = config && typeof config === 'object' && config.webNotebook && typeof config.webNotebook === 'object' ? config.webNotebook : {};
-  const env = process.env;
-  const out = { ...section };
-  if (typeof out.root !== 'string' || out.root.trim() === '') {
-    if (typeof env.WLJS_NOTEBOOK_DIR === 'string' && env.WLJS_NOTEBOOK_DIR.trim() !== '') out.root = env.WLJS_NOTEBOOK_DIR.trim();
-  }
-  if (out.httpPort === undefined || out.httpPort === null || out.httpPort === '') {
-    const port = Number(env.WLJS_HTTP_PORT);
-    if (Number.isInteger(port) && port > 0 && port < 65536) out.httpPort = port;
-  }
-  if (out.enabled === undefined && env.DSH_MATHEMATICA_WLJS === '0') out.enabled = false;
-  return out;
-}
-
-/**
  * Mount the Host half.
  *
  * @param {object} ctx Cordis plugin context
- * @param {object} [config] plugin config (`webNotebook` section is forwarded)
  */
-export function apply(ctx, config = {}) {
+export function apply(ctx) {
   const state = diagnosticsState();
   const diagnostics = createDiagnostics(state);
   const logger = (message) => {
@@ -118,20 +93,17 @@ export function apply(ctx, config = {}) {
     }
   };
 
-  const webConfig = decideWebNotebookConfig(config);
   const paths = new NotebookPaths({ ctx, env: process.env });
   const kernel = new KernelManager({ logger });
   const codec = new NotebookCodec({ kernel, logger });
   const store = new NotebookStore({ codec, paths, logger });
   const launcher = createLauncher();
-  const webNotebook = new WebNotebook({ config: webConfig, env: process.env, logger });
   const operations = new NotebookOperations({
     store,
     kernel,
     paths,
     launcher,
     diagnostics,
-    webNotebook,
     serverVersion: SERVER_VERSION,
     logger,
   });
@@ -178,16 +150,6 @@ export function apply(ctx, config = {}) {
         await kernel.dispose();
       } catch (error) {
         logger(`kernel dispose failed: ${error instanceof Error ? error.message : String(error)}`);
-      }
-      // The WLJS web notebook is a separate Wolfram process this plugin started
-      // on demand; stop it so uninstalling/restarting the plugin leaves no
-      // orphan server behind.
-      if (webNotebook !== null) {
-        try {
-          await webNotebook.dispose();
-        } catch (error) {
-          logger(`web notebook dispose failed: ${error instanceof Error ? error.message : String(error)}`);
-        }
       }
     },
     'mathematica-notebook: dispose',

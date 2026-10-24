@@ -116,6 +116,12 @@ function assertSvg(bytes, label = 'SVG') {
   assert.equal(Buffer.from(bytes.subarray(0, 5)).toString('utf8'), '<?xml', `${label}: SVG signature expected`);
 }
 
+function assertGif(bytes, label = 'GIF') {
+  assert.ok(bytes instanceof Uint8Array, `${label}: Uint8Array expected`);
+  assert.ok(bytes.byteLength > 300, `${label}: expected a multi-frame artifact`);
+  assert.equal(Buffer.from(bytes.subarray(0, 6)).toString('latin1'), 'GIF89a', `${label}: GIF89a signature expected`);
+}
+
 /* ------------------------------- kernel basics -------------------------- */
 
 kernelTest('kernel: evaluates, normalizes text and reports timing', async () => {
@@ -219,6 +225,39 @@ kernelTest('kernel: 3D results use PNG artifacts; truncated Graphics3D still att
   } finally {
     bridge.evaluate = original;
   }
+});
+
+/* ------------------------------ animation GIF --------------------------- */
+
+kernelTest('kernel: Animate cells render a clean looping GIF attachment', async () => {
+  const result = await state.manager.evaluate('Animate[Plot[Sin[x t], {x, 0, 2 Pi}, ImageSize -> 160], {t, 1, 3}]', {
+    label: 'test-gif-animate',
+    timeoutSeconds: 120,
+  });
+  assert.equal(result.ok, true);
+  assert.equal(result.artifactFormat, 'gif');
+  assertGif(result.svgBytes, 'Animate');
+  // The rebuilt frame list is an ordinary animation, not the Manipulate player:
+  // a 48-frame 160 px GIF stays far below the 12 MiB attachment cap.
+  assert.ok(result.svgBytes.byteLength < 12 * 1024 * 1024);
+});
+
+kernelTest('kernel: ListAnimate and Table frame lists render as GIF attachments', async () => {
+  const listAnimate = await state.manager.evaluate(
+    'ListAnimate[Table[Plot[Sin[x t], {x, 0, 2 Pi}, ImageSize -> 160], {t, 1, 3, 0.5}]]',
+    { label: 'test-gif-listanimate', timeoutSeconds: 90 },
+  );
+  assert.equal(listAnimate.ok, true);
+  assert.equal(listAnimate.artifactFormat, 'gif');
+  assertGif(listAnimate.svgBytes, 'ListAnimate');
+
+  const table = await state.manager.evaluate(
+    'Table[Plot[Sin[x t], {x, 0, 2 Pi}, ImageSize -> 160], {t, 1, 3, 0.5}]',
+    { label: 'test-gif-table', timeoutSeconds: 90 },
+  );
+  assert.equal(table.ok, true);
+  assert.equal(table.artifactFormat, 'gif');
+  assertGif(table.svgBytes, 'Table');
 });
 
 /* -------------------------------- nb codec ------------------------------ */

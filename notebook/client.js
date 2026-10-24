@@ -60,12 +60,6 @@ window.__ModuleLoader__.load({
       'toolbar.addCode': 'Code cell',
       'toolbar.saveCopy': 'Save a copy',
       'toolbar.retry': 'Retry',
-      'toolbar.web': 'Web notebook',
-      'toolbar.webHint': 'Full-fidelity WLJS frontend on the local Wolfram kernel',
-
-      'web.starting': 'Starting the web notebook…',
-      'web.opened': 'Opened the WLJS web notebook in the browser tab.',
-      'web.failed': 'Web notebook unavailable: {message}',
 
       'status.dirty': 'Unsaved',
       'status.saving': 'Saving…',
@@ -163,12 +157,6 @@ window.__ModuleLoader__.load({
       'toolbar.addCode': '代码单元格',
       'toolbar.saveCopy': '另存副本',
       'toolbar.retry': '重试',
-      'toolbar.web': '网页笔记本',
-      'toolbar.webHint': '完整渲染的 WLJS 前端，运行在本地 Wolfram 内核上',
-
-      'web.starting': '正在启动网页笔记本…',
-      'web.opened': '已在右侧浏览器标签页中打开 WLJS 网页笔记本。',
-      'web.failed': '网页笔记本不可用：{message}',
 
       'status.dirty': '未保存',
       'status.saving': '保存中…',
@@ -480,13 +468,16 @@ window.__ModuleLoader__.load({
 
     /**
      * Sniff the wire MIME type of one rendered-output attachment. The Host
-     * returns typeset SVG for 2D/symbolic results and PNG for 3D Graphics3D
-     * results, and both travel as raw bytes with no MIME metadata; the image
-     * element must be created with the right type.
+     * returns typeset SVG for 2D/symbolic results, PNG for 3D Graphics3D results
+     * and an animated GIF for animations (`Animate`, `ListAnimate`, a Table of
+     * plots); all travel as raw bytes with no MIME metadata, so the image
+     * element must be created with the right type. GIF frames are played by the
+     * browser itself — no extra animation code is needed in the plugin.
      *
      * @param bytes - attachment bytes (a Uint8Array from the connection parser).
-     * @returns 'image/png', 'image/svg+xml', or null when the bytes are not a
-     *   recognizable image (the caller keeps the text/raw placeholder path).
+     * @returns 'image/png', 'image/svg+xml', 'image/gif', or null when the bytes
+     *   are not a recognizable image (the caller keeps the text/raw placeholder
+     *   path).
      */
     function sniffImageMime(bytes) {
       if (bytes === null || bytes === undefined) return null;
@@ -499,6 +490,8 @@ window.__ModuleLoader__.load({
       if (typeof length !== 'number' || length < 4) return null;
       // PNG signature: 0x89 'P' 'N' 'G' followed by CR LF SUB LF.
       if (bytes[0] === 0x89 && bytes[1] === 0x50 && bytes[2] === 0x4e && bytes[3] === 0x47) return 'image/png';
+      // GIF signature: 'G' 'I' 'F' (GIF87a / GIF89a) — animated output.
+      if (bytes[0] === 0x47 && bytes[1] === 0x49 && bytes[2] === 0x46) return 'image/gif';
       // Markup sniff: skip an optional BOM and leading ASCII whitespace, then a
       // leading '<' (covers '<svg' and '<?xml'). Fall back to finding '<svg'
       // in the head of the payload for documents with a prolog or comments.
@@ -633,11 +626,6 @@ window.__ModuleLoader__.load({
       check: [strokePath('M3.2 8.4 6.4 11.6 12.8 4.6')],
       close: [strokePath('M4 4 12 12'), strokePath('M12 4 4 12')],
       sigma: [strokePath('M4 3.2h8L7.4 8l4.6 4.8H4')],
-      globe: [
-        strokePath('M8 1.8a6.2 6.2 0 1 0 0 12.4 6.2 6.2 0 0 0 0-12.4'),
-        strokePath('M1.8 8h12.4'),
-        strokePath('M8 1.8c1.8 1.9 2.7 4 2.7 6.2S9.8 12.3 8 14.2C6.2 12.3 5.3 10.2 5.3 8S6.2 3.7 8 1.8'),
-      ],
     };
 
     /** Tiny stroke/fill icon set rendered inline. */
@@ -1208,7 +1196,6 @@ window.__ModuleLoader__.load({
       const [saveAsName, setSaveAsName] = React.useState('');
       const [saveAsBusy, setSaveAsBusy] = React.useState(false);
       const [pendingFocusId, setPendingFocusId] = React.useState(null);
-      const [webBusy, setWebBusy] = React.useState(false);
 
       // --- Mutable mirrors the long-lived effect/handler closures read ---
       const mountedRef = React.useRef(true);
@@ -1867,48 +1854,6 @@ window.__ModuleLoader__.load({
         }
       }
 
-      /**
-       * Open the local WLJS web notebook (a full-fidelity Wolfram frontend that
-       * renders every output kind) in a right-sidebar Browser tab. The Host
-       * starts the WLJS server on demand; the tab embeds it natively, so nothing
-       * is re-implemented in this plugin's own renderer.
-       */
-      async function openWebNotebook() {
-        if (webBusy) return;
-        setWebBusy(true);
-        try {
-          const result = await callApi('webOpen', { sessionId: sessionIdRef.current, fresh: false });
-          if (!mountedRef.current) return;
-          if (result.ok !== true) {
-            setBanner({ kind: 'error', error: normalizeRpcError(result.error) });
-            return;
-          }
-          const value = result.value || {};
-          if (typeof value.url !== 'string' || value.url === '') {
-            setBanner({ kind: 'error', error: { code: 'internal_error', message: 'missing web notebook url' } });
-            return;
-          }
-          if (typeof props.openBrowserTab !== 'function') {
-            setBanner({ kind: 'error', error: { code: 'transport_error', message: 'browser tab carrier is unavailable' } });
-            return;
-          }
-          props.openBrowserTab(value.url);
-          showNote('web.opened');
-          // A newly created notebook gets a short intro/sample set once the
-          // Browser tab has attached to it; seeding is best-effort.
-          if (value.created === true && typeof value.notebookId === 'string') {
-            const notebookId = value.notebookId;
-            setTimeout(function () {
-              void callApi('webSeed', { sessionId: sessionIdRef.current, notebook: notebookId });
-            }, 2500);
-          }
-        } catch (error) {
-          if (mountedRef.current) setBanner({ kind: 'error', error: rpcFailure(error) });
-        } finally {
-          if (mountedRef.current) setWebBusy(false);
-        }
-      }
-
       function defaultCopyName() {
         const path = docPathRef.current || filePath || 'notebook.nb';
         return stemOf(basenameOf(path)) + '-copy.nb';
@@ -2310,22 +2255,6 @@ window.__ModuleLoader__.load({
             },
             h(SvgIcon, { name: 'plus', size: 12 }),
             h('span', null, t('toolbar.addCode')),
-          ),
-          h(
-            'button',
-            {
-              key: 'web-notebook',
-              type: 'button',
-              className: 'dmn-btn dmn-btn--accent',
-              'data-dmn-action': 'open-web-notebook',
-              title: t('toolbar.webHint'),
-              disabled: webBusy === true,
-              onClick: function () {
-                void openWebNotebook();
-              },
-            },
-            webBusy === true ? h('span', { className: 'dmn-spinner' }) : h(SvgIcon, { name: 'globe', size: 12 }),
-            h('span', null, webBusy === true ? t('web.starting') : t('toolbar.web')),
           ),
         );
 
@@ -2751,13 +2680,6 @@ window.__ModuleLoader__.load({
   color: var(--dsw-alias-label-primary-inverted, #fff);
 }
 .dmn-btn--primary:hover:not(:disabled) { background: var(--dsw-alias-button-primary-hover, #2f5fd0); }
-.dmn-btn--accent {
-  border-color: color-mix(in srgb, var(--dsw-alias-state-business-primary, #4176e6) 45%, transparent);
-  color: var(--dsw-alias-state-business-primary, #4176e6);
-}
-.dmn-btn--accent:hover:not(:disabled) {
-  background: color-mix(in srgb, var(--dsw-alias-state-business-primary, #4176e6) 12%, transparent);
-}
 .dmn-iconBtn {
   box-sizing: border-box;
   width: 24px;
@@ -3206,12 +3128,6 @@ window.__ModuleLoader__.load({
           variant: variant,
           call: function (endpoint, payload, signal) {
             return ctx.connection.rpc.call(CHANNEL, endpoint, payload, signal);
-          },
-          // Open a URL in a right-sidebar Browser tab (the DSH-native carrier,
-          // an Electron <webview> on Desktop). This is how the compatibility
-          // web notebook is embedded instead of re-rendering WL output here.
-          openBrowserTab: function (url) {
-            return ctx.sidebarRight.openTab('browser', { params: { url: url } });
           },
         };
       };

@@ -14,7 +14,16 @@ import { EventEmitter } from 'node:events';
 import { Readable } from 'node:stream';
 
 import { ErrorCodes, PluginError, toRpcError } from '../lib/errors.js';
-import { KernelManager, classifyPayloadError, isTrivialInputform, mapKernelError, normalizePayload } from '../lib/kernel-manager.js';
+import {
+  KernelManager,
+  animationFramesCode,
+  classifyPayloadError,
+  guessArtifactFormat,
+  inferResultArtifactFormat,
+  isTrivialInputform,
+  mapKernelError,
+  normalizePayload,
+} from '../lib/kernel-manager.js';
 import { locateMathematica, launchMathematica } from '../lib/launcher.js';
 import { NotebookPaths } from '../lib/paths.js';
 import { createDispatcher, handleRpcRequest, listEndpoints, writeRpcResult } from '../lib/rpc.js';
@@ -59,7 +68,7 @@ function makePaths() {
 test('paths: resolves the session working directory and default notebook dir', () => {
   const { paths, cwd, dshHome } = makePaths();
   assert.equal(paths.defaultDir('session-1'), join(cwd, 'notebooks'));
-  // No resolvable Session -> CONTRACT.md 搂6 fallback: $DSH_HOME/notebooks.
+  // No resolvable Session -> CONTRACT.md §6 fallback: $DSH_HOME/notebooks.
   assert.equal(paths.defaultDir('anonymous'), join(dshHome, 'notebooks'));
   assert.deepEqual(paths.allowedRoots('session-1'), [cwd, join(dshHome, 'notebooks')]);
   assert.deepEqual(paths.allowedRoots('anonymous'), [join(dshHome, 'notebooks')]);
@@ -312,6 +321,47 @@ test('kernel-manager: status is cheap before the kernel is started', async () =>
   await manager.dispose();
 });
 
+/* ------------------------- artifact format heuristics -------------------- */
+
+test('kernel-manager: artifact format heuristics cover animations, 3D and 2D', () => {
+  assert.equal(guessArtifactFormat('Animate[Plot[Sin[x t], {x, 0, 6}], {t, 0, 2 Pi}]'), 'gif');
+  assert.equal(guessArtifactFormat('ListAnimate[Table[Plot[Sin[x t], {x, 0, 6}], {t, 0, 2 Pi, 0.2}]]'), 'gif');
+  assert.equal(guessArtifactFormat('Table[Plot[Sin[x t], {x, 0, 6}], {t, 0, 2 Pi, 0.2}]'), 'gif');
+  assert.equal(guessArtifactFormat('Table[{i, i^2}, {i, 1, 5}]'), 'svg');
+  assert.equal(guessArtifactFormat('Plot3D[Sin[x y], {x, -3, 3}, {y, -3, 3}]'), 'png');
+  assert.equal(guessArtifactFormat('Plot[Sin[x], {x, 0, 2 Pi}]'), 'svg');
+  assert.equal(guessArtifactFormat('2 + 2'), 'svg');
+
+  assert.equal(inferResultArtifactFormat('Animate[Plot[Sin[x t]], {t, 1, 3}]'), 'gif');
+  assert.equal(inferResultArtifactFormat('ListAnimate[frames]'), 'gif');
+  assert.equal(inferResultArtifactFormat('{Graphics[Circle[]], Graphics[Disk[]]}'), 'gif');
+  assert.equal(inferResultArtifactFormat('{1, 2, 3}'), 'svg');
+  assert.equal(inferResultArtifactFormat('Graphics3D[Sphere[]]'), 'png');
+  assert.equal(inferResultArtifactFormat('Manipulate[Plot[Sin[x t]], {t, 1, 3}]'), 'svg');
+  assert.equal(inferResultArtifactFormat('"hello"'), 'svg');
+});
+
+test('kernel-manager: animationFramesCode rewrites Animate/ListAnimate into frame lists', () => {
+  assert.equal(
+    animationFramesCode('Animate[Plot[Sin[x t], {x, 0, 2 Pi}], {t, 0, 2 Pi}]'),
+    'Table[Plot[Sin[x t], {x, 0, 2 Pi}], {t, 0, 2 Pi, ((2 Pi) - (0))/47}]',
+  );
+  assert.equal(
+    animationFramesCode('Animate[Plot[Sin[x t]], {t, 0, 2 Pi, 0.2}, AnimationRate -> 2]'),
+    'Table[Plot[Sin[x t]], {t, 0, 2 Pi, 0.2}]',
+  );
+  assert.equal(
+    animationFramesCode('ListAnimate[Table[Plot[Sin[x t]], {t, 0, 2 Pi, 0.2}]]'),
+    'Table[Plot[Sin[x t]], {t, 0, 2 Pi, 0.2}]',
+  );
+  // Shapes that cannot be converted safely stay on the normal artifact path.
+  assert.equal(animationFramesCode('ListAnimate[frames]'), null);
+  assert.equal(animationFramesCode('Plot[Sin[x], {x, 0, 2 Pi}]'), null);
+  assert.equal(animationFramesCode('Animate[f[t], {t, 0}]'), null);
+  assert.equal(animationFramesCode('Animate[f[t], {t, 0, 1}] + 1'), null);
+  assert.equal(animationFramesCode('Animate[f[t], {t, 0, 1}];'), 'Table[f[t], {t, 0, 1, ((1) - (0))/47}]');
+});
+
 /* -------------------------------- launcher ------------------------------- */
 
 function memoryFs(files) {
@@ -402,7 +452,7 @@ test('launcher: detached spawn success, spawn error and immediate bad exit', asy
 function stubOperations(overrides = {}) {
   return {
     status: async () => ({
-      value: { ok: true, kernel: { state: 'stopped', path: null, version: null }, notebook: null, serverVersion: '0.1.0' },
+      value: { ok: true, kernel: { state: 'stopped', path: null, version: null }, notebook: null, serverVersion: '0.3.0' },
     }),
     list: async () => ({ value: { dir: 'C:\\np', files: [] } }),
     open: async () => {
@@ -444,7 +494,7 @@ test('rpc: dispatcher validates envelopes and enforces the owner peer', async ()
   const dispatch = createDispatcher({ operations: stubOperations(), diagnostics });
   const status = await dispatch('status', {});
   assert.equal(status.ok, true);
-  assert.equal(status.value.serverVersion, '0.1.0');
+  assert.equal(status.value.serverVersion, '0.3.0');
 
   const hello = await dispatch('hello', { probe: 1 });
   assert.deepEqual(hello.value, { ok: true, hello: true, count: 1 });
@@ -606,10 +656,6 @@ function captureOperations() {
       readForTool: value('read'),
       editForTool: value('edit'),
       runForTool: value('run'),
-      webStatus: value('webStatus'),
-      webOpen: value('webOpen'),
-      webAddCells: value('webAddCells'),
-      webEvaluate: value('webEvaluate'),
       debug: async (payload) => {
         calls.push(['debug', payload]);
         return { value: { ok: true, action: 'debug', kernel: { state: 'stopped' }, rpc: { helloCount: 3, lastHello: { at: 'now' } } } };
@@ -620,15 +666,10 @@ function captureOperations() {
 
 test('tools: definition shape and action mapping onto the operation layer', async () => {
   const { operations, calls } = captureOperations();
-  const tool = createNotebookTool({ operations, serverVersion: '0.1.0' });
+  const tool = createNotebookTool({ operations, serverVersion: '0.3.0' });
   assert.equal(tool.name, 'mathematica_notebook');
   assert.equal(tool.parameters.required[0], 'action');
-  const actions = tool.parameters.properties.action.enum;
-  // The `.nb` actions stay first (compatible order); web-notebook actions extend them.
-  assert.deepEqual(actions.slice(0, 6), ['list', 'create', 'read', 'edit', 'run', 'debug']);
-  for (const action of ['webStatus', 'webStart', 'webStop', 'webOpen', 'webSeed', 'webAddCells', 'webEvaluate']) {
-    assert.ok(actions.includes(action), `missing action ${action}`);
-  }
+  assert.deepEqual(tool.parameters.properties.action.enum, ['list', 'create', 'read', 'edit', 'run', 'debug']);
   assert.equal(tool.parameters.additionalProperties, false);
   assert.equal(tool.output.schema.type, 'string');
   assert.equal(tool.output.render(null, 'x')[0].type, 'text');
@@ -756,7 +797,7 @@ test('index: apply registers the tool and the RPC route, debug reports health', 
   assert.equal(debugResult.rpc.helloCount, 1);
   assert.equal(debugResult.rpc.lastHello.payload.attempt, 1);
   assert.equal(debugResult.kernel.state, 'stopped');
-  assert.equal(debugResult.serverVersion, '0.2.1');
+  assert.equal(debugResult.serverVersion, '0.3.0');
 
   const statusResponse = await (async () => {
     const req = mockRequest({ body: statusBody('s1') });
@@ -764,7 +805,7 @@ test('index: apply registers the tool and the RPC route, debug reports health', 
     await routes[0].handler(req, res);
     return JSON.parse(res.body.toString('utf8'));
   })();
-  assert.equal(statusResponse.result.value.serverVersion, '0.2.1');
+  assert.equal(statusResponse.result.value.serverVersion, '0.3.0');
   assert.equal(statusResponse.result.value.kernel.state, 'stopped');
 
   assert.ok(disposers.length >= 2);
@@ -795,7 +836,7 @@ test('index: debug probe runs a real endpoint through the dispatch table', async
   assert.equal(result.ok, true);
   assert.equal(result.probe.endpoint, 'status');
   assert.equal(result.probe.result.ok, true);
-  assert.equal(result.probe.result.value.serverVersion, '0.2.1');
+  assert.equal(result.probe.result.value.serverVersion, '0.3.0');
 
   const unknown = JSON.parse(await tools[0].execute({ action: 'debug', probeEndpoint: 'nope' }, {}));
   assert.equal(unknown.probe.result.ok, false);

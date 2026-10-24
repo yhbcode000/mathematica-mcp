@@ -13,12 +13,12 @@ tools) and shares its requirements — but **not** its kernel process; see
 | Piece | What it does |
 | --- | --- |
 | **Sidebar notebook tab** | Open from the right sidebar (**New Mathematica notebook**) or by opening any `*.nb` file. Multiple notebook tabs are supported. |
-| **Code cells** | Type Wolfram Language, run a cell (or all cells), see the result as text, typeset **SVG** (2D plots, formulas, tables) or a **PNG** image (3D graphics and raster images). `v1` supports code cells only. |
+| **Code cells** | Type Wolfram Language, run a cell (or all cells), see the result as text, typeset **SVG** (2D plots, formulas, tables), a **PNG** image (3D graphics and raster images) or a **looping GIF** for animations. `v1` supports code cells only. |
+| **Animations** | `Animate[...]`, `ListAnimate[...]` and a `Table` of plots are exported by the kernel as a clean multi-frame GIF (no Manipulate player chrome), so the cell really plays inside the sidebar instead of showing one frame. |
 | **Persistent notebook kernel** | Definitions persist between cells and between agent calls until you restart the kernel. |
 | **Real `.nb` files** | New notebooks are written immediately as valid Wolfram notebooks; saves keep a revision counter so the tab and the agent cannot silently overwrite each other. |
 | **Open in Mathematica** | Hands the current `.nb` to your installed Mathematica front end (external window). |
 | **Agent tool `mathematica_notebook`** | The agent can list, create, read, edit and run notebooks in the same store the tab uses — so a prompt like *"在 notebook 里加一节，导出这张图的 CSV"* works without switching windows. |
-| **Web notebook (WLJS)** | The **Web notebook** toolbar button starts a local [WLJS Notebook](https://github.com/WLJSTeam/wljs-notebook) server and embeds it in a right-sidebar **Browser** tab: a full Wolfram frontend (`Manipulate`, `Dataset`, interactive 3D, Markdown/HTML/JS cells) computed by the local kernel. |
 
 ## Requirements
 
@@ -72,8 +72,9 @@ DSH's client module system serves `client.js`.
 2. Type Wolfram Language in a cell and run it (the cell's run control; the tab shows the
    shortcut it supports). The first run starts the kernel — allow a few seconds.
 3. The result appears as text, and for rich results as a rendered image: typeset **SVG** for 2D/symbolic
-   output (plots, formulas, tables) and **PNG** for 3D graphics and images. The cell text shows a short
-   placeholder (for example `[typeset output]`) instead of the raw `InputForm`.
+   output (plots, formulas, tables), **PNG** for 3D graphics and images, and a **looping GIF** when the
+   cell is an animation (`Animate[...]`, `ListAnimate[...]`, or a `Table` of plots). The cell text shows a
+   short placeholder (for example `[typeset output]` or `[animation]`) instead of the raw `InputForm`.
 4. Save when you want to pin the revision, or let the 1.5 s auto-save debounce write to disk.
 5. **Open in Mathematica** launches the file in your Mathematica front end for full
    typesetting, printing, and interactive manipulation.
@@ -94,39 +95,6 @@ Ask in natural language; the agent maps it onto `mathematica_notebook` actions:
 
 The tool's actions (`list` / `create` / `read` / `edit` / `run` / `debug`) are documented in
 [CONTRACT.md](CONTRACT.md#5-agent-tool).
-
-## Web notebook (WLJS, full compatibility)
-
-The `.nb` tab renders rich output by attaching an SVG/PNG produced by the kernel — which covers 2D
-graphics, formulas, tables and raster 3D, but cannot express `Manipulate`, event handlers,
-`Dataset`, sound, or JavaScript/HTML/Markdown cells.
-
-For those, press **Web notebook** in the tab toolbar. The Host starts
-[WLJS Notebook](https://github.com/WLJSTeam/wljs-notebook) (AGPLv3) — an open-source, web-native
-Wolfram Language frontend — on demand and opens it in a right-sidebar **Browser** tab:
-
-- computed by this machine's Wolfram kernel; fully local, no cloud account;
-- full frontend compatibility: interactive 3D, `Manipulate` controls, `Dataset`, images, sound,
-  Markdown/HTML/JS/Mermaid/RevealJS cells, `.nb` import and standalone HTML export;
-- the same notebook is reachable from the agent through the tool's `web*` actions
-  (`webStatus`, `webStart`, `webOpen`, `webAddCells`, `webEvaluate`, `webKernelEvaluate`, …).
-
-Setup (one time):
-
-1. Download the WLJS Notebook **source archive** (`wljs-notebook-<version>.zip`, not the Electron
-   installer) from the [releases page](https://github.com/WLJSTeam/wljs-notebook/releases) and
-   extract it to one of: `$DSH_HOME/wljs-notebook`,
-   `$DSH_HOME/artifacts/wljs-notebook/app/wljs-notebook-3.1.4`, or any directory pointed at by
-   `WLJS_NOTEBOOK_DIR`.
-2. Make sure `wolframscript` and a licensed Mathematica/Wolfram Engine are installed. WLJS starts
-   with `wolframscript -f Scripts/start.wls`; Mathematica 14.1–15.0 is the tested range (15.0.1
-   works with a version warning).
-3. That is all — the button discovers the tree, starts the server on `127.0.0.1:20560` (loopback
-   only), and stops it when the plugin unloads. Set `WLJS_HTTP_PORT` if the default port is taken
-   (WLJS itself also accepts `Scripts/start.wls http <port> ws <port>` pairs).
-
-The first open is the slow one (WLJS loads ~30 paclets; up to a minute). Notebooks created from the
-button live in WLJS's quick-notes directory — save them from the WLJS UI to keep them.
 
 ## Two kernels, not one
 
@@ -171,11 +139,11 @@ explicit timeouts when needed), and a timed-out evaluation is aborted while the 
 | **Code cells only** | Markdown/text sections and rich cell styling are not editable in v1. |
 | **Foreign `.nb` imports are read-only** | A notebook whose cells cannot all be mapped to code/text is opened read-only; **Save As** is available to create an editable copy. Output cells and styling are not round-tripped. |
 | **3D output is raster** | 3D graphics (`Plot3D`, `Graphics3D`, …) and images are attached as **PNG**, not vector SVG; 2D graphics and symbolic results use SVG. |
+| **Animation detail** | Animations are rasterised as a looping GIF, not vector or interactive: `Animate`/`ListAnimate` cells are rebuilt as a 48-frame `Table` (a supplied step is respected), and the GIF is capped at **12 MiB** — a very large or very high-resolution 3D animation falls back to a still PNG. Truly draggable `Manipulate` controls are not possible without Wolfram's proprietary frontend. |
 | **Output text is bounded** | When a rendered image is attached the cell text is a short placeholder; very large plain-text results are truncated (≤ 4000 characters in the agent tool, longer entries truncated on the wire). |
 | **No output write-back to `.nb`** | Evaluated outputs are kept in the live notebook document; the `.nb` file stores cells. Re-run cells after reopening. |
 | **External window for Mathematica** | "Open in Mathematica" launches your front end; a native notebook embedded inside DSH is not possible with the current DSH window model. |
 | **Separate kernel** | See [Two kernels, not one](#two-kernels-not-one). |
-| **WLJS is not bundled** | The full-compatibility web notebook needs a separate [WLJS Notebook](https://github.com/WLJSTeam/wljs-notebook) download (AGPLv3) plus `wolframscript`; without it the button reports `web_notebook_unavailable`, while the built-in `.nb` tab keeps working. |
 | **Single user** | The RPC channel admits only the owner browser peer and filesystem access is limited to the session directory and `$DSH_HOME/notebooks`. |
 
 ## Troubleshooting
@@ -186,6 +154,8 @@ explicit timeouts when needed), and a timed-out evaluation is aborted while the 
 | `mcp__mathematica__*`-style tool missing (`mathematica_notebook`) | The Host half did not activate. Check DSH logs for `dsh-mathematica-notebook`; verify the bundle is installed. |
 | "Kernel unavailable" | Mathematica/Wolfram Engine not installed or not licensed, or not detected: set `MATHEMATICA_EXE` (for example `C:\Program Files\Wolfram Research\Wolfram\15.0\math.exe`). |
 | A 3D plot appears as an image, not vector graphics | Expected: 3D/raster results are PNG attachments; only 2D/symbolic results are SVG. |
+| `Animate` shows a still frame | Expected only when the animation exceeds the 12 MiB GIF cap or its call shape is not a single `Animate[body, {var, min, max}]` / `ListAnimate[frames]` expression (a complex wrapper falls back to the evaluated result). Simplify the iterator or lower `ImageSize`/frame count. |
+| An animation takes a long time first run | The kernel rasterises every frame once; a 48-frame plot is typically seconds, but large 3D frames can take longer. Later evaluations reuse the warm kernel. |
 | Cells run but the tab looks stale | The tab polls the Host every 2 s; if a banner appears, an external change (agent edit or another tab) conflicts with local edits — reload or save to resolve. |
 | "Path denied" when opening/saving | Paths must end in `.nb` and stay inside the session directory or `$DSH_HOME/notebooks`. |
 | Open in Mathematica fails | The launcher reports `launch_failed` when no front end is installed (Wolfram Engine alone has no notebook UI); open the file manually or install the Mathematica front end. |
