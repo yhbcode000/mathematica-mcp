@@ -515,3 +515,12 @@ stored `gh` CLI token is invalid/expired and the local SSH key is not authorized
 (`Permission denied (publickey)`), so the published raw index still shows the 0.2.1 state. The
 release/market commits are ready to push once `gh auth login -h github.com` (or an authorized SSH
 key) restores credentials.
+#### 0.3.0 remote verification (2026-10-24 14:53:17 +08:00)
+
+- `git push origin main` succeeded; remote `main` = `0ef12650ed98c9a8756723929005ce04893c0b06` (local HEAD identical).
+- Raw index `https://raw.githubusercontent.com/yhbcode000/mathematica-mcp/main/market/index.json`
+  downloaded and byte-identical to the local `market/index.json` (SHA-256 `455F3D1DB6295AF07EBCF2B90A5459ED6F2A666AA8D3D459AC417BDFCA7E2B7C`).
+- Raw index lists notebook `0.3.0` pinned to `e77cf91d4c9a5596714e5582ebd9729dea0c085e`; both `market/validate-index.mjs`
+  and the shipped `@deepseek-ai/dsh-plugin-market-index` validator accept the local file.
+- Public install spec:
+  `git+https://github.com/yhbcode000/mathematica-mcp.git#e77cf91d4c9a5596714e5582ebd9729dea0c085e&path:/notebook`
