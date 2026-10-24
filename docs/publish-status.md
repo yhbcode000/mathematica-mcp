@@ -468,3 +468,50 @@ raw index verified HTTP 200 (6,073 bytes) with matching SHA-256, `market/validat
 for all four entries (`dsh-mathematica-mcp@0.1.0/0.1.1`,
 `dsh-mathematica-notebook@0.1.0/0.2.1`), and the repository suite is 104/104 (`node --test` from the
 repository root).
+### Notebook 0.3.0 — animation GIF rendering (WLJS removed)
+
+Feature release that makes dynamic output visible in the **native DSH sidebar notebook** (the product
+answer to "Mathematica 有太多需要支持的 type"): animations are now rendered into the cell as a
+looping GIF by the local kernel. The 0.2.1 WLJS web-notebook experiment is reverted, and its local
+installation (≈660 MB) was removed from this machine.
+
+| Item | Value |
+| --- | --- |
+| Package version | `0.3.0` |
+| Release commit | `e77cf91d4c9a5596714e5582ebd9729dea0c085e` |
+| Install spec | `git+https://github.com/yhbcode000/mathematica-mcp.git#e77cf91d4c9a5596714e5582ebd9729dea0c085e&path:/notebook` |
+| Reverted | `0.2.1` WLJS integration (its commit `a7f1ec9` stays in history) |
+| New rendering | GIF artifact (≤ 12 MiB) for `Animate[...]`, `ListAnimate[...]` and `Table` of plots; camera player chrome is stripped by rebuilding the animation as an explicit frame list |
+| New module code | `lib/kernel-manager.js`: `guessArtifactFormat` / `inferResultArtifactFormat` gain `gif`, new `animationFramesCode` parser + `_renderCleanAnimation`; `client.js` sniffs `GIF87a/GIF89a` |
+
+Verification (local Windows 10, Mathematica 15.0.1):
+
+- **V1 — unit:** notebook suite 47/47 (`node --test`), repository root 99/99. New unit tests cover
+  `guessArtifactFormat` (animation → gif, Table of plots → gif, Table of numbers → svg, 3D → png),
+  `inferResultArtifactFormat`, and `animationFramesCode` rewriting
+  (`Animate[body, {t, min, max}]` → `Table[...]` with 48 frames, supplied step respected, unsafe
+  shapes → `null`).
+- **V2 — real kernel:** `Animate[...]` → `GIF89a` artifact (clean frames, no Manipulate player
+  chrome, 1.2 MB for a 48-frame 420 px wave), `ListAnimate[Table[...]]` → GIF, `Table[Plot[...]]` →
+  GIF. The clean path deliberately skips the bridge-side artifact export, because rasterising the
+  evaluated `Manipulate` object both captures the chrome and can exceed the evaluation timeout.
+- **V3 — installed package:** after installing `dsh-mathematica-notebook@0.3.0` locally, the
+  installed `KernelManager` produces a 1.2 MB `GIF89a` for `Animate[...]` and 243 KB for a `Table`
+  frame list; the installed `client.js` contains the GIF sniffer and no web-notebook button; the
+  running Host reports `serverVersion: "0.3.0"` and the client half re-registered (hello after HMR),
+  so no DSH restart was needed for this release.
+- **V4 — end-to-end notebook:** `D:\workspace\notebooks\animation-demo.nb` holds a note plus three
+  animation cells (`Animate` wave, `Animate` rose curve, `Table` frame list); running it through the
+  agent tool returns `[animation rendered in the notebook]` per animation cell (the bytes are not
+  persisted in the store; the tab renders them when the user runs the cells).
+- **V5 — degradation:** oversized/unrenderable animations fall back to a still PNG (or text); the
+  artificial 48-frame rebuild is bounded by the 12 MiB attachment cap. Draggable `Manipulate`
+  controls remain out of scope (needs Wolfram's proprietary frontend).
+
+Publication status: **local release complete, push blocked.** The market index in this working tree
+adds the 0.3.0 entry pinned to `e77cf91`, and both `market/validate-index.mjs` and the shipped
+`@deepseek-ai/dsh-plugin-market-index` validator accept it. Pushing failed on 2026-10-24 because the
+stored `gh` CLI token is invalid/expired and the local SSH key is not authorized on GitHub
+(`Permission denied (publickey)`), so the published raw index still shows the 0.2.1 state. The
+release/market commits are ready to push once `gh auth login -h github.com` (or an authorized SSH
+key) restores credentials.
