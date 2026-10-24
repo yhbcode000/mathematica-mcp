@@ -508,13 +508,11 @@ Verification (local Windows 10, Mathematica 15.0.1):
   artificial 48-frame rebuild is bounded by the 12 MiB attachment cap. Draggable `Manipulate`
   controls remain out of scope (needs Wolfram's proprietary frontend).
 
-Publication status: **local release complete, push blocked.** The market index in this working tree
-adds the 0.3.0 entry pinned to `e77cf91`, and both `market/validate-index.mjs` and the shipped
-`@deepseek-ai/dsh-plugin-market-index` validator accept it. Pushing failed on 2026-10-24 because the
-stored `gh` CLI token is invalid/expired and the local SSH key is not authorized on GitHub
-(`Permission denied (publickey)`), so the published raw index still shows the 0.2.1 state. The
-release/market commits are ready to push once `gh auth login -h github.com` (or an authorized SSH
-key) restores credentials.
+Publication status: **published 2026-10-24.** The first push attempts were blocked by an expired
+`gh` CLI token; after `gh auth login -h github.com` restored credentials, the release commit
+(`e77cf91`), the market pin (`0ef1265`) and the remote verification below were pushed to `main`. The
+market index in this working tree adds the 0.3.0 entry pinned to `e77cf91`, and both
+`market/validate-index.mjs` and the shipped `@deepseek-ai/dsh-plugin-market-index` validator accept it.
 #### 0.3.0 remote verification (2026-10-24 14:53:17 +08:00)
 
 - `git push origin main` succeeded; remote `main` = `0ef12650ed98c9a8756723929005ce04893c0b06` (local HEAD identical).
